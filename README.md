@@ -137,6 +137,10 @@ Mozambique/
 | 绿豆汤 | 饮品 | ¥8 |
 | 银耳羹 | 甜品 | ¥12 |
 
+## 在线预览
+
+https://iridiumzero.github.io/restaurant-pos/
+
 ## 启动方式
 
 ```bash

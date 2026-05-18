@@ -12,29 +12,25 @@
       </el-radio-group>
     </div>
 
-    <el-table :data="filteredDishes" border stripe style="width: 100%" v-loading="loading">
-      <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column prop="name" label="菜品名称" min-width="120" />
-      <el-table-column prop="category" label="分类" width="100">
-        <template #default="{ row }">
-          <el-tag size="small">{{ row.category }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="price" label="价格" width="120" sortable>
-        <template #default="{ row }">
-          <span class="money">&yen;{{ row.price.toFixed(2) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" :icon="Edit" @click="showEditDialog(row)">编辑</el-button>
-          <el-button size="small" type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <!-- 卡片列表（平板/移动端友好） -->
+    <div class="dish-card-list" v-loading="loading">
+      <div v-for="dish in filteredDishes" :key="dish.id" class="dish-row">
+        <div class="dish-row-main">
+          <span class="dish-row-id">#{{ dish.id }}</span>
+          <span class="dish-row-name">{{ dish.name }}</span>
+          <el-tag size="small">{{ dish.category }}</el-tag>
+        </div>
+        <div class="dish-row-right">
+          <span class="dish-row-price">&yen;{{ dish.price.toFixed(2) }}</span>
+          <el-button size="small" :icon="Edit" @click="showEditDialog(dish)">编辑</el-button>
+          <el-button size="small" type="danger" :icon="Delete" @click="handleDelete(dish)">删除</el-button>
+        </div>
+      </div>
+      <div v-if="!loading && !filteredDishes.length" class="empty-hint">暂无菜品，点击右上角添加</div>
+    </div>
 
     <!-- 添加/编辑对话框 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑菜品' : '添加菜品'" width="480px" :close-on-click-modal="false">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑菜品' : '添加菜品'" width="90%" :close-on-click-modal="false">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="80px">
         <el-form-item label="菜品名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入菜品名称" />
@@ -156,24 +152,77 @@ onMounted(loadDishes)
 <style scoped>
 .menu-manage {
   background: #fff;
-  padding: 20px;
-  border-radius: 8px;
+  padding: 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .page-header h2 {
   margin: 0;
   font-size: 18px;
 }
 .filter-bar {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  white-space: nowrap;
 }
-.money {
+.dish-card-list {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.dish-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dish-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dish-row-id {
+  color: #c0c4cc;
+  font-size: 12px;
+  min-width: 28px;
+}
+.dish-row-name {
+  font-weight: 500;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dish-row-price {
   color: #f56c6c;
   font-weight: bold;
+  font-size: 14px;
+  min-width: 60px;
+  text-align: right;
+}
+.dish-row-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.empty-hint {
+  text-align: center;
+  color: #c0c4cc;
+  padding: 40px 0;
+  font-size: 14px;
 }
 </style>

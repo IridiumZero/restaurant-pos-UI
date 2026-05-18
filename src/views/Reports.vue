@@ -2,30 +2,30 @@
   <div class="reports">
     <h2>销售报表</h2>
     <el-row :gutter="16" style="margin-top: 16px">
-      <el-col :span="12">
-        <el-card shadow="never">
+      <el-col :xs="24" :lg="12">
+        <el-card shadow="never" class="chart-card">
           <template #header><span class="card-title">近7天销售额趋势</span></template>
-          <v-chart :option="dailyOption" style="height: 320px" autoresize />
+          <v-chart :option="dailyOption" class="chart-box" autoresize />
         </el-card>
       </el-col>
-      <el-col :span="12">
-        <el-card shadow="never">
+      <el-col :xs="24" :lg="12">
+        <el-card shadow="never" class="chart-card">
           <template #header><span class="card-title">各分类销售占比</span></template>
-          <v-chart :option="categoryOption" style="height: 320px" autoresize />
+          <v-chart :option="categoryOption" class="chart-box" autoresize />
         </el-card>
       </el-col>
     </el-row>
     <el-row :gutter="16" style="margin-top: 16px">
-      <el-col :span="12">
-        <el-card shadow="never">
+      <el-col :xs="24" :lg="12">
+        <el-card shadow="never" class="chart-card">
           <template #header><span class="card-title">支付方式占比</span></template>
-          <v-chart :option="paymentOption" style="height: 320px" autoresize />
+          <v-chart :option="paymentOption" class="chart-box" autoresize />
         </el-card>
       </el-col>
-      <el-col :span="12">
-        <el-card shadow="never">
+      <el-col :xs="24" :lg="12">
+        <el-card shadow="never" class="chart-card">
           <template #header><span class="card-title">菜品销量排行 Top 10</span></template>
-          <v-chart :option="dishRankOption" style="height: 320px" autoresize />
+          <v-chart :option="dishRankOption" class="chart-box" autoresize />
         </el-card>
       </el-col>
     </el-row>
@@ -185,7 +185,7 @@ onMounted(async () => {
 
 <style scoped>
 .reports {
-  padding: 20px;
+  padding: 16px;
 }
 .reports h2 {
   font-size: 18px;
@@ -195,18 +195,26 @@ onMounted(async () => {
   font-weight: 600;
   font-size: 15px;
 }
+.chart-card {
+  margin-bottom: 16px;
+}
+.chart-box {
+  height: 280px;
+}
 .total-summary {
   display: flex;
-  gap: 20px;
-  margin-top: 20px;
+  gap: 16px;
+  margin-top: 8px;
   background: #fff;
-  padding: 20px;
+  padding: 16px;
   border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  flex-wrap: wrap;
 }
 .summary-stat {
   flex: 1;
   text-align: center;
+  min-width: 100px;
 }
 .stat-label {
   display: block;
@@ -215,7 +223,7 @@ onMounted(async () => {
   margin-bottom: 4px;
 }
 .stat-value {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: bold;
   color: #303133;
 }

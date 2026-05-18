@@ -70,19 +70,21 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
 }
 .login-card {
-  width: 400px;
-  padding: 40px;
+  width: 100%;
+  max-width: 380px;
+  padding: 32px 24px;
   background: #fff;
-  border-radius: 8px;
+  border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 .login-card h2 {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 28px;
   color: #303133;
-  font-size: 22px;
+  font-size: 20px;
 }
 .hint {
   text-align: center;

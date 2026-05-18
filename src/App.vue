@@ -2,48 +2,41 @@
   <div v-if="$route.path === '/login'" class="login-wrapper">
     <router-view />
   </div>
-  <el-container v-else class="main-container">
-    <el-aside width="220px" class="sidebar">
-      <div class="logo">餐厅收银系统</div>
-      <el-menu
-        :default-active="$route.path"
-        router
-        background-color="#304156"
-        text-color="#bfcbd9"
-        active-text-color="#409EFF"
-      >
-        <el-menu-item index="/">
-          <el-icon><Monitor /></el-icon>
-          <span>POS收银</span>
-        </el-menu-item>
-        <el-menu-item index="/menu">
-          <el-icon><KnifeFork /></el-icon>
-          <span>菜品管理</span>
-        </el-menu-item>
-        <el-menu-item index="/orders">
-          <el-icon><Document /></el-icon>
-          <span>订单历史</span>
-        </el-menu-item>
-        <el-menu-item index="/reports">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>销售报表</span>
-        </el-menu-item>
-      </el-menu>
-      <div class="sidebar-footer">
-        <span>管理员</span>
-        <el-button type="danger" size="small" @click="logout" link>退出</el-button>
-      </div>
-    </el-aside>
-    <el-main class="main-content">
+  <div v-else class="app-shell">
+    <header class="top-bar">
+      <span class="top-title">餐厅收银系统</span>
+      <el-button type="danger" size="small" @click="logout" plain>退出</el-button>
+    </header>
+    <main class="main-content">
       <router-view />
-    </el-main>
-  </el-container>
+    </main>
+    <nav class="bottom-tabs">
+      <div
+        v-for="tab in tabs"
+        :key="tab.path"
+        class="tab-item"
+        :class="{ active: $route.path === tab.path }"
+        @click="$router.push(tab.path)"
+      >
+        <el-icon :size="20"><component :is="tab.icon" /></el-icon>
+        <span class="tab-label">{{ tab.label }}</span>
+      </div>
+    </nav>
+  </div>
 </template>
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { Monitor, KnifeFork, Document, DataAnalysis } from '@element-plus/icons-vue'
 
 const router = useRouter()
+
+const tabs = [
+  { path: '/', label: '收银', icon: Monitor },
+  { path: '/menu', label: '菜品', icon: KnifeFork },
+  { path: '/orders', label: '订单', icon: Document },
+  { path: '/reports', label: '报表', icon: DataAnalysis },
+]
 
 function logout() {
   localStorage.removeItem('isLoggedIn')
@@ -55,38 +48,54 @@ function logout() {
 .login-wrapper {
   height: 100%;
 }
-.main-container {
+.app-shell {
   height: 100%;
-}
-.sidebar {
-  background-color: #304156;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  background: #f0f2f5;
 }
-.logo {
-  height: 60px;
-  line-height: 60px;
-  text-align: center;
-  color: #fff;
-  font-size: 18px;
-  font-weight: bold;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-.sidebar .el-menu {
-  border-right: none;
-  flex: 1;
-}
-.sidebar-footer {
-  padding: 12px 20px;
-  color: #bfcbd9;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+.top-bar {
+  height: 48px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: #304156;
+  color: #fff;
+  flex-shrink: 0;
+}
+.top-title {
+  font-size: 16px;
+  font-weight: bold;
 }
 .main-content {
-  background: #f0f2f5;
+  flex: 1;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.bottom-tabs {
+  height: 56px;
+  display: flex;
+  background: #fff;
+  border-top: 1px solid #e4e7ed;
+  flex-shrink: 0;
+}
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #909399;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-item.active {
+  color: #409EFF;
+}
+.tab-label {
+  font-size: 11px;
+  margin-top: 2px;
 }
 </style>

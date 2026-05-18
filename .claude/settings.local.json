@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "PowerShell(npx vite build 2>&1)",
-      "PowerShell(npx vite --host 2>&1)"
+      "PowerShell(npx vite --host 2>&1)",
+      "PowerShell($size = \\(Get-ChildItem \"d:\\\\User\\\\Desktop\\\\Mozambique\\\\android\" -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum\\).Sum; if \\($size\\) { [math]::Round\\($size/1MB, 1\\) } else { \"N/A\" })"
     ]
   }
 }

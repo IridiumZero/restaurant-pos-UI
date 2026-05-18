@@ -341,6 +341,8 @@ onMounted(async () => {
   transition: transform 0.1s;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  overflow: visible;
+  margin: 4px 2px;
 }
 .dish-card:active {
   transform: scale(0.96);

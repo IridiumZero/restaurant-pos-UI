@@ -155,7 +155,49 @@ npm run build
 
 # 预览生产版本
 npm run preview
+
+# 同步 Web 到 Android 项目
+npm run cap:sync
+
+# 在 Android Studio 中打开（编译 APK）
+npm run cap:open
 ```
+
+## 构建 APK（Android 应用）
+
+### 环境要求
+
+- [Android Studio](https://developer.android.com/studio) (Hedgehog 2023.1+)
+- Android SDK (Android Studio 自带)
+- Java 17 (Android Studio 自带)
+
+### 步骤
+
+```bash
+# 1. 构建 Web 并同步到 Android 项目
+npm run cap:sync
+
+# 2. 在 Android Studio 中打开
+npm run cap:open
+```
+
+在 Android Studio 中：
+1. 等待 Gradle 同步完成
+2. 连接 Android 设备或启动模拟器
+3. 点击 **Run** 按钮（绿色三角形）
+4. APK 自动安装到设备
+
+### APK 文件位置
+
+```
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 纯离线使用
+
+- 所有数据存储在设备本地 IndexedDB
+- 无需网络连接
+- 蓝牙打印需要实体热敏打印机 + `@capacitor-community/bluetooth-le` 插件
 
 ## 版本历史
 

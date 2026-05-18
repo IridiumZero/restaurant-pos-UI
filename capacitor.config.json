@@ -1,0 +1,10 @@
+{
+  "appId": "com.restaurant.pos",
+  "appName": "餐厅收银",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  }
+}

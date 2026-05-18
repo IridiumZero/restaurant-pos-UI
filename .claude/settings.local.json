@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(npx vite build 2>&1)",
+      "PowerShell(npx vite --host 2>&1)"
+    ]
+  }
+}

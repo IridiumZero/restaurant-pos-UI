@@ -66,6 +66,7 @@ export default {
     placeholderPass: '请输入密码',
     serverLabel: '服务器',
     serverPlaceholder: 'http://192.168.x.x:3000',
+    serverHint: '模拟器请用 http://10.0.2.2:3000，真机请用电脑局域网IP',
   },
 
   order: {

@@ -66,6 +66,7 @@ export default {
     placeholderPass: 'Enter password',
     serverLabel: 'Server',
     serverPlaceholder: 'http://192.168.x.x:3000',
+    serverHint: 'Emulator: use http://10.0.2.2:3000 | Real device: use PC LAN IP',
   },
 
   order: {

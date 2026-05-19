@@ -161,6 +161,7 @@
     <!-- 服务器配置对话框 -->
     <el-dialog v-model="showServerConfig" title="Server URL" width="380px">
       <el-input v-model="serverUrlInput" placeholder="http://192.168.x.x:3000" size="large" />
+      <p style="margin:8px 0 0;font-size:11px;color:#909399">{{ t('login.serverHint') }}</p>
       <template #footer>
         <el-button @click="showServerConfig = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="saveServerUrl">{{ t('common.save') }}</el-button>

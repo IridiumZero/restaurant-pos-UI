@@ -8,6 +8,7 @@
         <el-input v-model="serverUrl" :placeholder="t('login.serverPlaceholder')" size="small">
           <template #prepend>{{ t('login.serverLabel') }}</template>
         </el-input>
+        <p class="server-hint">{{ t('login.serverHint') }}</p>
       </div>
 
       <el-form :model="form" :rules="rules" ref="formRef" @submit.prevent="handleLogin">
@@ -111,6 +112,12 @@ onMounted(() => {
 }
 .server-config {
   margin-bottom: 16px;
+}
+.server-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #909399;
+  line-height: 1.4;
 }
 .hint {
   text-align: center;

@@ -186,7 +186,20 @@ const tableNumber = ref(null)
 const activeCategory = ref('全部')
 const loading = ref(false)
 const serverOk = ref(false)
-const serverUrl = ref(localStorage.getItem('serverUrl') || (isCapacitorApp() ? '' : (location.origin || 'http://localhost:3000')))
+function isCapacitorApp() {
+  return location.origin.startsWith('https://localhost') || location.origin.startsWith('capacitor://')
+}
+
+function isCapacitorUrl(url) {
+  return url.startsWith('https://localhost') || url.startsWith('capacitor://') || url.startsWith('http://localhost')
+}
+
+// Clean up any saved URL that points to the Capacitor webview itself
+const _savedUrl = localStorage.getItem('serverUrl')
+if (_savedUrl && isCapacitorUrl(_savedUrl)) {
+  localStorage.removeItem('serverUrl')
+}
+const serverUrl = ref((_savedUrl && !isCapacitorUrl(_savedUrl)) ? _savedUrl : (isCapacitorApp() ? '' : (location.origin || 'http://localhost:3000')))
 
 // Waiter
 const currentUser = ref(null)
@@ -283,12 +296,8 @@ function saveServerUrl() {
   loadDishes()
 }
 
-function isCapacitorApp() {
-  return location.origin.startsWith('https://localhost') || location.origin.startsWith('capacitor://')
-}
-
 async function checkServer() {
-  // If inside APK and no server URL ever saved, skip probe — show config dialog
+  // If inside APK and no valid server URL saved, skip probe — show config dialog
   if (isCapacitorApp() && !localStorage.getItem('serverUrl')) {
     serverOk.value = false
     return

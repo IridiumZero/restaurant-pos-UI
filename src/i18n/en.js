@@ -64,6 +64,8 @@ export default {
     error: 'Incorrect username or password',
     placeholderUser: 'Enter username',
     placeholderPass: 'Enter password',
+    serverLabel: 'Server',
+    serverPlaceholder: 'http://192.168.x.x:3000',
   },
 
   order: {

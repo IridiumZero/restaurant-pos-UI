@@ -1,47 +1,18 @@
 <template>
   <div class="reports">
     <h2>{{ t('reports.title') }}</h2>
-    <el-row :gutter="16" style="margin-top: 16px">
-      <el-col :xs="24" :lg="12">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">{{ t('reports.monthlyTrend') }}</span></template>
-          <v-chart :option="dailyOption" class="chart-box" autoresize />
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :lg="12">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">{{ t('reports.categoryPie') }}</span></template>
-          <v-chart :option="categoryOption" class="chart-box" autoresize />
-        </el-card>
-      </el-col>
+    <el-row :gutter="16" style="margin-top:16px">
+      <el-col :xs="24" :lg="12"><el-card shadow="never" class="chart-card"><template #header><span class="card-title">{{ t('reports.monthlyTrend') }}</span></template><v-chart :option="trendOption" class="chart-box" autoresize /></el-card></el-col>
+      <el-col :xs="24" :lg="12"><el-card shadow="never" class="chart-card"><template #header><span class="card-title">{{ t('reports.categoryPie') }}</span></template><v-chart :option="categoryOption" class="chart-box" autoresize /></el-card></el-col>
     </el-row>
-    <el-row :gutter="16" style="margin-top: 16px">
-      <el-col :xs="24" :lg="12">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">{{ t('reports.paymentPie') }}</span></template>
-          <v-chart :option="paymentOption" class="chart-box" autoresize />
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :lg="12">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">{{ t('reports.dishRank') }}</span></template>
-          <v-chart :option="dishRankOption" class="chart-box" autoresize />
-        </el-card>
-      </el-col>
+    <el-row :gutter="16" style="margin-top:16px">
+      <el-col :xs="24" :lg="12"><el-card shadow="never" class="chart-card"><template #header><span class="card-title">{{ t('reports.paymentPie') }}</span></template><v-chart :option="paymentOption" class="chart-box" autoresize /></el-card></el-col>
+      <el-col :xs="24" :lg="12"><el-card shadow="never" class="chart-card"><template #header><span class="card-title">{{ t('reports.dishRank') }}</span></template><v-chart :option="dishRankOption" class="chart-box" autoresize /></el-card></el-col>
     </el-row>
     <div class="total-summary">
-      <div class="summary-stat">
-        <span class="stat-label">{{ t('reports.totalOrders') }}</span>
-        <span class="stat-value">{{ completedOrders.length }}</span>
-      </div>
-      <div class="summary-stat">
-        <span class="stat-label">{{ t('reports.totalRevenue') }}</span>
-        <span class="stat-value money">{{ formatCurrency(totalRevenue) }}</span>
-      </div>
-      <div class="summary-stat">
-        <span class="stat-label">{{ t('reports.avgPerOrder') }}</span>
-        <span class="stat-value money">{{ formatCurrency(avgOrder) }}</span>
-      </div>
+      <div class="summary-stat"><span class="stat-label">{{ t('reports.totalOrders') }}</span><span class="stat-value">{{ summary.orders }}</span></div>
+      <div class="summary-stat"><span class="stat-label">{{ t('reports.totalRevenue') }}</span><span class="stat-value money">{{ formatCurrency(summary.revenue) }}</span></div>
+      <div class="summary-stat"><span class="stat-label">{{ t('reports.avgPerOrder') }}</span><span class="stat-value money">{{ formatCurrency(summary.avg) }}</span></div>
     </div>
   </div>
 </template>
@@ -53,151 +24,77 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
-import { getAll } from '../db'
 import { useI18n } from '../i18n'
+import { api } from '../api'
 
 use([CanvasRenderer, BarChart, LineChart, PieChart, GridComponent, TooltipComponent, LegendComponent])
-
 const { t, formatCurrency } = useI18n()
 
-const orders = ref([])
+const trendData = ref([]), categoryData = ref([]), paymentData = ref([]), dishTopData = ref([])
+const loading = ref(false)
 
-const completedOrders = computed(() => orders.value.filter((o) => o.status === 'completed'))
-const totalRevenue = computed(() => completedOrders.value.reduce((s, o) => s + o.totalAmount, 0))
-const avgOrder = computed(() => completedOrders.value.length ? totalRevenue.value / completedOrders.value.length : 0)
-
-const dailyOption = computed(() => {
-  const days = []
-  const now = new Date()
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now)
-    d.setDate(d.getDate() - i)
-    days.push(d.toISOString().slice(0, 10))
-  }
-  const sales = days.map((day) =>
-    completedOrders.value.filter((o) => o.createdAt.startsWith(day)).reduce((sum, o) => sum + o.totalAmount, 0)
-  )
-  return {
-    tooltip: { trigger: 'axis', formatter: (p) => `${p[0].axisValue}<br/>${t('reports.totalRevenue')}: ${formatCurrency(p[0].value)}` },
-    xAxis: { type: 'category', data: days.map((d) => d.slice(5)), axisLabel: { interval: 4 } },
-    yAxis: { type: 'value', name: 'MT' },
-    series: [{
-      data: sales, type: 'line', smooth: true,
-      areaStyle: { color: 'rgba(64, 158, 255, 0.15)' },
-      itemStyle: { color: '#409EFF' },
-      symbol: 'circle', symbolSize: 6,
-    }],
-    grid: { left: 60, right: 20, top: 20, bottom: 30 },
-  }
+const summary = computed(() => {
+  const allOrders = trendData.value.reduce((s, d) => s + d.count, 0)
+  const allRevenue = trendData.value.reduce((s, d) => s + d.revenue, 0)
+  return { orders: allOrders, revenue: allRevenue, avg: allOrders ? allRevenue / allOrders : 0 }
 })
 
-const categoryOption = computed(() => {
-  const map = {}
-  completedOrders.value.forEach((o) => {
-    o.items.forEach((item) => {
-      const cat = item.category || 'Other'
-      map[cat] = (map[cat] || 0) + item.price * item.qty
-    })
-  })
-  return {
-    tooltip: { trigger: 'item', formatter: '{b}: {c} MT ({d}%)' },
-    legend: { bottom: 0 },
-    series: [{
-      type: 'pie', radius: ['45%', '72%'], center: ['50%', '45%'],
-      data: Object.entries(map).map(([name, value]) => ({ name, value })),
-      label: { formatter: '{b}\n{d}%' },
-    }],
-  }
-})
+const trendOption = computed(() => ({
+  tooltip: { trigger: 'axis', formatter: p => `${p[0].axisValue}<br/>${t('reports.totalRevenue')}: ${formatCurrency(p[0].value)}` },
+  xAxis: { type: 'category', data: trendData.value.map(d => d.date.slice(5)), axisLabel: { interval: 4 } },
+  yAxis: { type: 'value', name: 'MT' },
+  series: [{ data: trendData.value.map(d => d.revenue), type: 'line', smooth: true, areaStyle: { color: 'rgba(64,158,255,0.15)' }, itemStyle: { color: '#409EFF' }, symbol: 'circle', symbolSize: 6 }],
+  grid: { left: 60, right: 20, top: 20, bottom: 30 },
+}))
+
+const categoryOption = computed(() => ({
+  tooltip: { trigger: 'item', formatter: '{b}: {c} MT ({d}%)' },
+  legend: { bottom: 0 },
+  series: [{ type: 'pie', radius: ['45%','72%'], center: ['50%','45%'], data: categoryData.value.map(d => ({ name: d.category, value: d.total })), label: { formatter: '{b}\n{d}%' } }],
+}))
 
 const paymentOption = computed(() => {
-  const map = {}
-  completedOrders.value.forEach((o) => {
-    map[o.paymentMethod] = (map[o.paymentMethod] || 0) + 1
-  })
   const colorMap = { '现金': '#67c23a', 'POS机': '#409EFF' }
   return {
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
     legend: { bottom: 0 },
-    series: [{
-      type: 'pie', radius: ['45%', '72%'], center: ['50%', '45%'],
-      data: Object.entries(map).map(([name, value]) => ({ name, value, itemStyle: { color: colorMap[name] } })),
-      label: { formatter: '{b}\n{d}%' },
-    }],
+    series: [{ type: 'pie', radius: ['45%','72%'], center: ['50%','45%'], data: paymentData.value.map(d => ({ name: d.name, value: d.value, itemStyle: { color: colorMap[d.name] } })), label: { formatter: '{b}\n{d}%' } }],
   }
 })
 
 const dishRankOption = computed(() => {
-  const map = {}
-  completedOrders.value.forEach((o) => {
-    o.items.forEach((item) => {
-      map[item.name] = (map[item.name] || 0) + item.qty
-    })
-  })
-  const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 10).reverse()
+  const sorted = [...dishTopData.value].reverse()
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: '{b}: {c}' },
-    xAxis: { type: 'value', name: '' },
-    yAxis: { type: 'category', data: sorted.map(([n]) => n), axisLabel: { width: 90, overflow: 'truncate' } },
-    series: [{
-      data: sorted.map(([, v]) => v), type: 'bar',
-      itemStyle: { color: '#409EFF', borderRadius: [0, 4, 4, 0] },
-      barMaxWidth: 28,
-    }],
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: sorted.map(d => d.name), axisLabel: { width: 90, overflow: 'truncate' } },
+    series: [{ data: sorted.map(d => d.qty), type: 'bar', itemStyle: { color: '#409EFF', borderRadius: [0,4,4,0] }, barMaxWidth: 28 }],
     grid: { left: 100, right: 20, top: 10, bottom: 20 },
   }
 })
 
 onMounted(async () => {
-  orders.value = await getAll('orders')
+  try {
+    const [trend, cat, pay, dishes] = await Promise.all([
+      api.getMonthlyTrend(), api.getCategoryPie(), api.getPaymentPie(), api.getDishesTop()
+    ])
+    trendData.value = trend
+    categoryData.value = cat
+    paymentData.value = pay
+    dishTopData.value = dishes
+  } catch {}
 })
 </script>
 
 <style scoped>
-.reports {
-  padding: 16px;
-}
-.reports h2 {
-  font-size: 18px;
-  margin: 0;
-}
-.card-title {
-  font-weight: 600;
-  font-size: 15px;
-}
-.chart-card {
-  margin-bottom: 16px;
-}
-.chart-box {
-  height: 280px;
-}
-.total-summary {
-  display: flex;
-  gap: 16px;
-  margin-top: 8px;
-  background: #fff;
-  padding: 16px;
-  border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-  flex-wrap: wrap;
-}
-.summary-stat {
-  flex: 1;
-  text-align: center;
-  min-width: 100px;
-}
-.stat-label {
-  display: block;
-  font-size: 13px;
-  color: #909399;
-  margin-bottom: 4px;
-}
-.stat-value {
-  font-size: 24px;
-  font-weight: bold;
-  color: #303133;
-}
-.stat-value.money {
-  color: #f56c6c;
-}
+.reports { padding:16px; }
+.reports h2 { font-size:18px; margin:0; }
+.card-title { font-weight:600; font-size:15px; }
+.chart-card { margin-bottom:16px; }
+.chart-box { height:280px; }
+.total-summary { display:flex; gap:16px; margin-top:8px; background:#fff; padding:16px; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.06); flex-wrap:wrap; }
+.summary-stat { flex:1; text-align:center; min-width:100px; }
+.stat-label { display:block; font-size:13px; color:#909399; margin-bottom:4px; }
+.stat-value { font-size:24px; font-weight:bold; color:#303133; }
+.stat-value.money { color:#f56c6c; }
 </style>

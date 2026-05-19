@@ -64,6 +64,8 @@ export default {
     error: 'Usuário ou senha incorretos',
     placeholderUser: 'Digite o usuário',
     placeholderPass: 'Digite a senha',
+    serverLabel: 'Servidor',
+    serverPlaceholder: 'http://192.168.x.x:3000',
   },
 
   order: {

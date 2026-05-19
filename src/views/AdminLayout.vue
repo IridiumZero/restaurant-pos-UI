@@ -64,6 +64,8 @@ function handleSelect(path) {
 
 function logout() {
   localStorage.removeItem('isLoggedIn')
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
   router.push('/login')
 }
 </script>

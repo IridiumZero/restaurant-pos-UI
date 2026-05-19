@@ -64,6 +64,8 @@ export default {
     error: '账号或密码错误',
     placeholderUser: '请输入账号',
     placeholderPass: '请输入密码',
+    serverLabel: '服务器',
+    serverPlaceholder: 'http://192.168.x.x:3000',
   },
 
   order: {

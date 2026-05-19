@@ -1,16 +1,16 @@
 <template>
   <div class="reports">
-    <h2>销售报表</h2>
+    <h2>{{ t('reports.title') }}</h2>
     <el-row :gutter="16" style="margin-top: 16px">
       <el-col :xs="24" :lg="12">
         <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">近7天销售额趋势</span></template>
+          <template #header><span class="card-title">{{ t('reports.monthlyTrend') }}</span></template>
           <v-chart :option="dailyOption" class="chart-box" autoresize />
         </el-card>
       </el-col>
       <el-col :xs="24" :lg="12">
         <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">各分类销售占比</span></template>
+          <template #header><span class="card-title">{{ t('reports.categoryPie') }}</span></template>
           <v-chart :option="categoryOption" class="chart-box" autoresize />
         </el-card>
       </el-col>
@@ -18,29 +18,29 @@
     <el-row :gutter="16" style="margin-top: 16px">
       <el-col :xs="24" :lg="12">
         <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">支付方式占比</span></template>
+          <template #header><span class="card-title">{{ t('reports.paymentPie') }}</span></template>
           <v-chart :option="paymentOption" class="chart-box" autoresize />
         </el-card>
       </el-col>
       <el-col :xs="24" :lg="12">
         <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">菜品销量排行 Top 10</span></template>
+          <template #header><span class="card-title">{{ t('reports.dishRank') }}</span></template>
           <v-chart :option="dishRankOption" class="chart-box" autoresize />
         </el-card>
       </el-col>
     </el-row>
     <div class="total-summary">
       <div class="summary-stat">
-        <span class="stat-label">总订单数</span>
-        <span class="stat-value">{{ orders.length }}</span>
+        <span class="stat-label">{{ t('reports.totalOrders') }}</span>
+        <span class="stat-value">{{ completedOrders.length }}</span>
       </div>
       <div class="summary-stat">
-        <span class="stat-label">总销售额</span>
-        <span class="stat-value money">&yen;{{ totalRevenue.toFixed(2) }}</span>
+        <span class="stat-label">{{ t('reports.totalRevenue') }}</span>
+        <span class="stat-value money">{{ formatCurrency(totalRevenue) }}</span>
       </div>
       <div class="summary-stat">
-        <span class="stat-label">平均客单价</span>
-        <span class="stat-value money">&yen;{{ avgOrder.toFixed(2) }}</span>
+        <span class="stat-label">{{ t('reports.avgPerOrder') }}</span>
+        <span class="stat-value money">{{ formatCurrency(avgOrder) }}</span>
       </div>
     </div>
   </div>
@@ -54,126 +54,96 @@ import { BarChart, LineChart, PieChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { getAll } from '../db'
+import { useI18n } from '../i18n'
 
 use([CanvasRenderer, BarChart, LineChart, PieChart, GridComponent, TooltipComponent, LegendComponent])
 
+const { t, formatCurrency } = useI18n()
+
 const orders = ref([])
 
-const totalRevenue = computed(() => orders.value.reduce((s, o) => s + o.totalAmount, 0))
-const avgOrder = computed(() => orders.value.length ? totalRevenue.value / orders.value.length : 0)
+const completedOrders = computed(() => orders.value.filter((o) => o.status === 'completed'))
+const totalRevenue = computed(() => completedOrders.value.reduce((s, o) => s + o.totalAmount, 0))
+const avgOrder = computed(() => completedOrders.value.length ? totalRevenue.value / completedOrders.value.length : 0)
 
-// 近7天销售额趋势
 const dailyOption = computed(() => {
   const days = []
   const now = new Date()
-  for (let i = 6; i >= 0; i--) {
+  for (let i = 29; i >= 0; i--) {
     const d = new Date(now)
     d.setDate(d.getDate() - i)
     days.push(d.toISOString().slice(0, 10))
   }
   const sales = days.map((day) =>
-    orders.value.filter((o) => o.createdAt.startsWith(day)).reduce((sum, o) => sum + o.totalAmount, 0)
+    completedOrders.value.filter((o) => o.createdAt.startsWith(day)).reduce((sum, o) => sum + o.totalAmount, 0)
   )
   return {
-    tooltip: { trigger: 'axis', formatter: '{b}<br/>销售额: ¥{c}' },
-    xAxis: { type: 'category', data: days.map((d) => d.slice(5)) },
-    yAxis: { type: 'value', name: '元' },
-    series: [
-      {
-        data: sales,
-        type: 'line',
-        smooth: true,
-        areaStyle: { color: 'rgba(64, 158, 255, 0.15)' },
-        itemStyle: { color: '#409EFF' },
-        symbol: 'circle',
-        symbolSize: 8,
-      },
-    ],
-    grid: { left: 50, right: 20, top: 20, bottom: 30 },
+    tooltip: { trigger: 'axis', formatter: (p) => `${p[0].axisValue}<br/>${t('reports.totalRevenue')}: ${formatCurrency(p[0].value)}` },
+    xAxis: { type: 'category', data: days.map((d) => d.slice(5)), axisLabel: { interval: 4 } },
+    yAxis: { type: 'value', name: 'MT' },
+    series: [{
+      data: sales, type: 'line', smooth: true,
+      areaStyle: { color: 'rgba(64, 158, 255, 0.15)' },
+      itemStyle: { color: '#409EFF' },
+      symbol: 'circle', symbolSize: 6,
+    }],
+    grid: { left: 60, right: 20, top: 20, bottom: 30 },
   }
 })
 
-// 分类销售占比
 const categoryOption = computed(() => {
   const map = {}
-  orders.value.forEach((o) => {
+  completedOrders.value.forEach((o) => {
     o.items.forEach((item) => {
-      const cat = item.category || '其他'
+      const cat = item.category || 'Other'
       map[cat] = (map[cat] || 0) + item.price * item.qty
     })
   })
   return {
-    tooltip: { trigger: 'item', formatter: '{b}: ¥{c} ({d}%)' },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} MT ({d}%)' },
     legend: { bottom: 0 },
-    series: [
-      {
-        type: 'pie',
-        radius: ['45%', '72%'],
-        center: ['50%', '45%'],
-        data: Object.entries(map).map(([name, value]) => ({ name, value })),
-        label: { formatter: '{b}\n{d}%' },
-      },
-    ],
+    series: [{
+      type: 'pie', radius: ['45%', '72%'], center: ['50%', '45%'],
+      data: Object.entries(map).map(([name, value]) => ({ name, value })),
+      label: { formatter: '{b}\n{d}%' },
+    }],
   }
 })
 
-// 支付方式占比
 const paymentOption = computed(() => {
   const map = {}
-  orders.value.forEach((o) => {
+  completedOrders.value.forEach((o) => {
     map[o.paymentMethod] = (map[o.paymentMethod] || 0) + 1
   })
   const colorMap = { '现金': '#67c23a', 'POS机': '#409EFF' }
   return {
-    tooltip: { trigger: 'item', formatter: '{b}: {c} 单 ({d}%)' },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
     legend: { bottom: 0 },
-    series: [
-      {
-        type: 'pie',
-        radius: ['45%', '72%'],
-        center: ['50%', '45%'],
-        data: Object.entries(map).map(([name, value]) => ({
-          name,
-          value,
-          itemStyle: { color: colorMap[name] },
-        })),
-        label: { formatter: '{b}\n{d}%' },
-      },
-    ],
+    series: [{
+      type: 'pie', radius: ['45%', '72%'], center: ['50%', '45%'],
+      data: Object.entries(map).map(([name, value]) => ({ name, value, itemStyle: { color: colorMap[name] } })),
+      label: { formatter: '{b}\n{d}%' },
+    }],
   }
 })
 
-// 菜品销量排行
 const dishRankOption = computed(() => {
   const map = {}
-  orders.value.forEach((o) => {
+  completedOrders.value.forEach((o) => {
     o.items.forEach((item) => {
       map[item.name] = (map[item.name] || 0) + item.qty
     })
   })
-  const sorted = Object.entries(map)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .reverse()
+  const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 10).reverse()
   return {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: '{b}: {c} 份' },
-    xAxis: { type: 'value', name: '份' },
-    yAxis: {
-      type: 'category',
-      data: sorted.map(([name]) => name),
-      axisLabel: { width: 90, overflow: 'truncate' },
-    },
-    series: [
-      {
-        data: sorted.map(([, v]) => v),
-        type: 'bar',
-        itemStyle: {
-          color: '#409EFF',
-          borderRadius: [0, 4, 4, 0],
-        },
-        barMaxWidth: 28,
-      },
-    ],
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: '{b}: {c}' },
+    xAxis: { type: 'value', name: '' },
+    yAxis: { type: 'category', data: sorted.map(([n]) => n), axisLabel: { width: 90, overflow: 'truncate' } },
+    series: [{
+      data: sorted.map(([, v]) => v), type: 'bar',
+      itemStyle: { color: '#409EFF', borderRadius: [0, 4, 4, 0] },
+      barMaxWidth: 28,
+    }],
     grid: { left: 100, right: 20, top: 10, bottom: 20 },
   }
 })

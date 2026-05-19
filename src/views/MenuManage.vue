@@ -1,52 +1,63 @@
 <template>
   <div class="menu-manage">
     <div class="page-header">
-      <h2>菜品管理</h2>
-      <el-button type="primary" :icon="Plus" @click="showAddDialog">添加菜品</el-button>
+      <h2>{{ t('menu.title') }}</h2>
+      <el-button type="primary" :icon="Plus" @click="showAddDialog">{{ t('menu.addDish') }}</el-button>
     </div>
 
     <div class="filter-bar">
       <el-radio-group v-model="filterCategory" size="small">
-        <el-radio-button value="全部">全部</el-radio-button>
+        <el-radio-button value="全部">{{ t('common.all') }}</el-radio-button>
         <el-radio-button v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</el-radio-button>
       </el-radio-group>
     </div>
 
-    <!-- 卡片列表（平板/移动端友好） -->
     <div class="dish-card-list" v-loading="loading">
       <div v-for="dish in filteredDishes" :key="dish.id" class="dish-row">
         <div class="dish-row-main">
           <span class="dish-row-id">#{{ dish.id }}</span>
           <span class="dish-row-name">{{ dish.name }}</span>
           <el-tag size="small">{{ dish.category }}</el-tag>
+          <el-tag :type="dish.status === 'active' ? 'success' : 'info'" size="small">
+            {{ dish.status === 'active' ? t('menu.active') : t('menu.inactive') }}
+          </el-tag>
         </div>
         <div class="dish-row-right">
-          <span class="dish-row-price">&yen;{{ dish.price.toFixed(2) }}</span>
-          <el-button size="small" :icon="Edit" @click="showEditDialog(dish)">编辑</el-button>
-          <el-button size="small" type="danger" :icon="Delete" @click="handleDelete(dish)">删除</el-button>
+          <span class="dish-row-price">{{ formatCurrency(dish.price) }}</span>
+          <el-button size="small" :icon="Edit" @click="showEditDialog(dish)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" :icon="Delete" @click="handleDelete(dish)">{{ t('common.delete') }}</el-button>
         </div>
       </div>
-      <div v-if="!loading && !filteredDishes.length" class="empty-hint">暂无菜品，点击右上角添加</div>
+      <div v-if="!loading && !filteredDishes.length" class="empty-hint">{{ t('menu.noDish') }}</div>
     </div>
 
-    <!-- 添加/编辑对话框 -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑菜品' : '添加菜品'" width="90%" :close-on-click-modal="false">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? t('menu.editDish') : t('menu.addDish')" width="90%" :close-on-click-modal="false">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="80px">
-        <el-form-item label="菜品名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入菜品名称" />
+        <el-form-item :label="t('menu.dishName')" prop="name">
+          <el-input v-model="form.name" :placeholder="t('menu.placeholderName')" />
         </el-form-item>
-        <el-form-item label="所属分类" prop="category">
-          <el-select v-model="form.category" placeholder="选择或输入分类" style="width: 100%" allow-create filterable>
+        <el-form-item :label="t('menu.dishCategory')" prop="category">
+          <el-select v-model="form.category" :placeholder="t('menu.placeholderCategory')" style="width: 100%" allow-create filterable>
             <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
           </el-select>
         </el-form-item>
-        <el-form-item label="价格" prop="price">
-          <el-input-number v-model="form.price" :min="0.01" :precision="2" :step="1" style="width: 100%" placeholder="请输入价格" />
+        <el-form-item :label="t('menu.dishPrice')" prop="price">
+          <el-input-number v-model="form.price" :min="1" :precision="2" :step="10" style="width: 100%" :placeholder="t('menu.placeholderPrice')" />
+          <span style="margin-left: 8px; color: #909399">MT</span>
+        </el-form-item>
+        <el-form-item :label="t('menu.dishStock')" prop="stock">
+          <el-input-number v-model="form.stock" :min="0" :step="1" style="width: 100%" />
+        </el-form-item>
+        <el-form-item :label="t('menu.dishStatus')" prop="status">
+          <el-select v-model="form.status" style="width: 100%">
+            <el-option :label="t('menu.active')" value="active" />
+            <el-option :label="t('menu.inactive')" value="inactive" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleSave" :loading="saving">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -57,6 +68,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { getAll, add, update, remove } from '../db'
+import { useI18n } from '../i18n'
+
+const { t, formatCurrency } = useI18n()
 
 const dishes = ref([])
 const dialogVisible = ref(false)
@@ -71,12 +85,15 @@ const form = reactive({
   name: '',
   category: '',
   price: 0,
+  stock: 0,
+  image: '',
+  status: 'active',
 })
 
 const rules = {
-  name: [{ required: true, message: '请输入菜品名称', trigger: 'blur' }],
-  category: [{ required: true, message: '请选择或输入分类', trigger: 'blur' }],
-  price: [{ required: true, message: '请输入价格', trigger: 'blur' }],
+  name: [{ required: true, message: 'Required', trigger: 'blur' }],
+  category: [{ required: true, message: 'Required', trigger: 'blur' }],
+  price: [{ required: true, message: 'Required', trigger: 'blur' }],
 }
 
 const categories = computed(() => {
@@ -100,6 +117,9 @@ function showAddDialog() {
   form.name = ''
   form.category = ''
   form.price = 0
+  form.stock = 0
+  form.image = ''
+  form.status = 'active'
   dialogVisible.value = true
   setTimeout(() => formRef.value?.resetFields(), 0)
 }
@@ -110,6 +130,9 @@ function showEditDialog(row) {
   form.name = row.name
   form.category = row.category
   form.price = row.price
+  form.stock = row.stock || 0
+  form.image = row.image || ''
+  form.status = row.status || 'active'
   dialogVisible.value = true
 }
 
@@ -117,14 +140,14 @@ async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
   saving.value = true
-  const data = { name: form.name, category: form.category, price: form.price }
+  const data = { name: form.name, category: form.category, price: form.price, stock: form.stock, image: form.image, status: form.status }
   if (isEdit.value) {
     data.id = editingId.value
     await update('dishes', data)
-    ElMessage.success('修改成功')
+    ElMessage.success(t('menu.editSuccess'))
   } else {
     await add('dishes', data)
-    ElMessage.success('添加成功')
+    ElMessage.success(t('menu.addSuccess'))
   }
   saving.value = false
   dialogVisible.value = false
@@ -133,17 +156,15 @@ async function handleSave() {
 
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(`确认删除菜品"${row.name}"？此操作不可恢复。`, '删除确认', {
-      confirmButtonText: '确认删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('menu.deleteConfirm'), t('common.confirm'), {
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
     })
     await remove('dishes', row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(t('menu.deleteSuccess'))
     await loadDishes()
-  } catch {
-    // cancelled
-  }
+  } catch { /* cancelled */ }
 }
 
 onMounted(loadDishes)
@@ -210,7 +231,7 @@ onMounted(loadDishes)
   color: #f56c6c;
   font-weight: bold;
   font-size: 14px;
-  min-width: 60px;
+  min-width: 80px;
   text-align: right;
 }
 .dish-row-right {

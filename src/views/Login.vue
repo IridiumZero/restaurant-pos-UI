@@ -1,17 +1,17 @@
 <template>
   <div class="login-container">
     <div class="login-card">
-      <h2>餐厅收银系统</h2>
+      <h2>{{ t('login.title') }}</h2>
       <el-form :model="form" :rules="rules" ref="formRef" @submit.prevent="handleLogin">
         <el-form-item prop="username">
-          <el-input v-model="form.username" placeholder="账号" size="large">
+          <el-input v-model="form.username" :placeholder="t('login.placeholderUser')" size="large">
             <template #prefix>
               <el-icon><User /></el-icon>
             </template>
           </el-input>
         </el-form-item>
         <el-form-item prop="password">
-          <el-input v-model="form.password" type="password" placeholder="密码" size="large" show-password>
+          <el-input v-model="form.password" type="password" :placeholder="t('login.placeholderPass')" size="large" show-password>
             <template #prefix>
               <el-icon><Lock /></el-icon>
             </template>
@@ -19,11 +19,16 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" size="large" @click="handleLogin" :loading="loading" style="width: 100%">
-            登 录
+            {{ t('login.loginBtn') }}
           </el-button>
         </el-form-item>
       </el-form>
-      <p class="hint">默认账号: admin / 123456</p>
+      <p class="hint">{{ t('login.hint') }}</p>
+      <div class="lang-switch">
+        <el-select v-model="currentLang" size="small" style="width: 130px" @change="setLocale">
+          <el-option v-for="opt in localeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+        </el-select>
+      </div>
     </div>
   </div>
 </template>
@@ -32,6 +37,10 @@
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useI18n, localeOptions } from '../i18n'
+
+const { t, locale, setLocale } = useI18n()
+const currentLang = ref(locale.value)
 
 const router = useRouter()
 const formRef = ref(null)
@@ -43,8 +52,8 @@ const form = reactive({
 })
 
 const rules = {
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  username: [{ required: true, message: 'Required', trigger: 'blur' }],
+  password: [{ required: true, message: 'Required', trigger: 'blur' }],
 }
 
 async function handleLogin() {
@@ -54,10 +63,10 @@ async function handleLogin() {
   await new Promise((r) => setTimeout(r, 500))
   if (form.username === 'admin' && form.password === '123456') {
     localStorage.setItem('isLoggedIn', 'true')
-    ElMessage.success('登录成功')
-    router.push('/')
+    ElMessage.success(t('login.success'))
+    router.push('/admin')
   } else {
-    ElMessage.error('账号或密码错误')
+    ElMessage.error(t('login.error'))
   }
   loading.value = false
 }
@@ -90,5 +99,10 @@ async function handleLogin() {
   text-align: center;
   color: #909399;
   font-size: 13px;
+}
+.lang-switch {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
 }
 </style>

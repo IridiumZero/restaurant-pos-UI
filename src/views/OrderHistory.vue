@@ -1,48 +1,55 @@
 <template>
   <div class="order-history">
     <div class="page-header">
-      <h2>订单历史</h2>
+      <h2>{{ t('history.title') }}</h2>
       <div class="filter-row">
         <el-date-picker
           v-model="dateRange"
           type="daterange"
-          range-separator="至"
-          start-placeholder="开始"
-          end-placeholder="结束"
+          range-separator="~"
+          :start-placeholder="t('common.startDate')"
+          :end-placeholder="t('common.endDate')"
           format="YYYY-MM-DD"
           value-format="YYYY-MM-DD"
           size="default"
           style="width: 220px"
         />
-        <el-select v-model="paymentFilter" placeholder="支付方式" clearable style="width: 110px">
-          <el-option label="现金" value="现金" />
-          <el-option label="POS机" value="POS机" />
+        <el-select v-model="paymentFilter" :placeholder="t('history.filterByPayment')" clearable style="width: 110px">
+          <el-option label="Cash" value="现金" />
+          <el-option label="POS" value="POS机" />
         </el-select>
-        <el-button @click="loadOrders" size="small">刷新</el-button>
+        <el-select v-model="waiterFilter" :placeholder="t('history.filterByWaiter')" clearable style="width: 120px">
+          <el-option v-for="w in waiterList" :key="w.id" :label="w.name" :value="w.id" />
+        </el-select>
+        <el-button @click="loadOrders" size="small">{{ t('common.refresh') }}</el-button>
       </div>
     </div>
 
-    <!-- 汇总卡片 -->
     <div class="summary-cards">
       <div class="summary-item">
-        <span class="summary-label">订单数</span>
+        <span class="summary-label">{{ t('history.orderCount') }}</span>
         <span class="summary-value">{{ filteredOrders.length }}</span>
       </div>
       <div class="summary-item">
-        <span class="summary-label">总销售额</span>
-        <span class="summary-value money">&yen;{{ totalSales.toFixed(2) }}</span>
+        <span class="summary-label">{{ t('history.totalSales') }}</span>
+        <span class="summary-value money">{{ formatCurrency(totalSales) }}</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-label">{{ t('history.avgOrder') }}</span>
+        <span class="summary-value money">{{ formatCurrency(avgOrder) }}</span>
       </div>
     </div>
 
-    <!-- 卡片列表 -->
     <div class="order-card-list" v-loading="loading">
       <div v-for="order in filteredOrders" :key="order.id" class="order-card">
         <div class="order-card-top">
           <span class="order-no">#{{ order.id }}</span>
+          <el-tag size="small">{{ order.tableNumber }} {{ t('order.table') }}</el-tag>
+          <el-tag v-if="order.waiterName" size="small" type="info">{{ order.waiterName }}</el-tag>
           <el-tag :type="order.paymentMethod === '现金' ? 'success' : ''" size="small">
             {{ order.paymentMethod }}
           </el-tag>
-          <span class="order-total money">&yen;{{ order.totalAmount.toFixed(2) }}</span>
+          <span class="order-total money">{{ formatCurrency(order.totalAmount) }}</span>
         </div>
         <div class="order-card-items">
           <span v-for="(item, idx) in order.items" :key="idx" class="order-item-tag">
@@ -52,11 +59,11 @@
         <div class="order-card-bottom">
           <span class="order-time">{{ formatTime(order.createdAt) }}</span>
           <span v-if="order.paymentMethod === '现金'" class="order-cash-detail">
-            收 &yen;{{ order.cashReceived?.toFixed(2) }} / 找 &yen;{{ order.change?.toFixed(2) }}
+            {{ t('admin.cashReceived') }} {{ formatCurrency(order.cashReceived) }} / {{ t('admin.change') }} {{ formatCurrency(order.change) }}
           </span>
         </div>
       </div>
-      <div v-if="!loading && !filteredOrders.length" class="empty-hint">暂无订单</div>
+      <div v-if="!loading && !filteredOrders.length" class="empty-hint">{{ t('history.noOrders') }}</div>
     </div>
   </div>
 </template>
@@ -64,16 +71,24 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { getAll } from '../db'
+import { useI18n } from '../i18n'
+
+const { t, formatCurrency } = useI18n()
 
 const orders = ref([])
+const waiterList = ref([])
 const dateRange = ref([])
 const paymentFilter = ref('')
+const waiterFilter = ref(null)
 const loading = ref(false)
 
 const filteredOrders = computed(() => {
-  let result = orders.value
+  let result = orders.value.filter((o) => o.status === 'completed')
   if (paymentFilter.value) {
     result = result.filter((o) => o.paymentMethod === paymentFilter.value)
+  }
+  if (waiterFilter.value) {
+    result = result.filter((o) => o.waiterId === waiterFilter.value)
   }
   if (dateRange.value && dateRange.value.length === 2) {
     const start = dateRange.value[0]
@@ -87,6 +102,10 @@ const totalSales = computed(() => {
   return filteredOrders.value.reduce((sum, o) => sum + o.totalAmount, 0)
 })
 
+const avgOrder = computed(() => {
+  return filteredOrders.value.length ? totalSales.value / filteredOrders.value.length : 0
+})
+
 function formatTime(iso) {
   if (!iso) return ''
   const d = new Date(iso)
@@ -97,6 +116,7 @@ function formatTime(iso) {
 async function loadOrders() {
   loading.value = true
   orders.value = await getAll('orders')
+  waiterList.value = (await getAll('employees')).filter((e) => e.role === 'waiter')
   loading.value = false
 }
 

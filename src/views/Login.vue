@@ -83,7 +83,8 @@ async function handleLogin() {
 }
 
 onMounted(() => {
-  saveServerUrl()
+  // Don't auto-save — if the user has a stale URL in localStorage from a
+  // previous session, it would overwrite the correct location.origin default.
 })
 </script>
 

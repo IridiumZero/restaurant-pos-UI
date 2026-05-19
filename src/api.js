@@ -1,4 +1,4 @@
-const BASE_URL = () => localStorage.getItem('serverUrl') || 'http://localhost:3000'
+const BASE_URL = () => localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000'
 
 async function request(method, path, body, isPublic) {
   const headers = { 'Content-Type': 'application/json' }

@@ -51,7 +51,7 @@ const currentLang = ref(locale.value)
 const router = useRouter()
 const formRef = ref(null)
 const loading = ref(false)
-const serverUrl = ref(localStorage.getItem('serverUrl') || 'http://localhost:3000')
+const serverUrl = ref(localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000')
 
 const form = reactive({ username: 'admin', password: '123456' })
 const rules = {

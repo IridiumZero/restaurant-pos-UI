@@ -1,3 +1,4 @@
+const path = require('path')
 const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
@@ -298,6 +299,15 @@ function getLanIp() {
   return 'localhost'
 }
 
+// Serve built frontend (production)
+const distPath = path.join(__dirname, '..', 'dist')
+app.use(express.static(distPath))
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(distPath, 'index.html'))
+  }
+})
+
 app.listen(PORT, '0.0.0.0', () => {
   const lanIp = getLanIp()
   console.log('')
@@ -307,6 +317,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('')
   console.log(`  Local:   http://localhost:${PORT}`)
   console.log(`  Network: http://${lanIp}:${PORT}`)
+  console.log(`  API:     http://${lanIp}:${PORT}/api`)
   console.log('')
   console.log('  Press Ctrl+C to stop')
   console.log('')

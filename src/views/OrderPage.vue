@@ -186,7 +186,7 @@ const tableNumber = ref(null)
 const activeCategory = ref('全部')
 const loading = ref(false)
 const serverOk = ref(false)
-const serverUrl = ref(localStorage.getItem('serverUrl') || 'http://localhost:3000')
+const serverUrl = ref(localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000')
 
 // Waiter
 const currentUser = ref(null)

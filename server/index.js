@@ -3,12 +3,10 @@ const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const os = require('os')
-const { init, find, findOne, insert, update, remove, save, hashPassword } = require('./db')
+const { init, find, findOne, insert, update, remove, removeWhere, save, hashPassword } = require('./db')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'restaurant-pos-secret-change-in-production'
 const PORT = process.env.PORT || 3000
-
-init()
 
 const app = express()
 app.use(cors())
@@ -124,15 +122,13 @@ app.put('/api/orders/:id', auth(), (req, res) => {
     table_number: tableNumber, total_amount: Number(totalAmount), status
   })
   // Replace order items
-  const { data } = require('./db')
-  data.order_items = data.order_items.filter(oi => oi.order_id !== parseInt(req.params.id))
+  removeWhere('order_items', oi => oi.order_id === parseInt(req.params.id))
   for (const item of items) {
     insert('order_items', {
       order_id: parseInt(req.params.id), dish_id: item.dishId, dish_name: item.name,
       dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty
     })
   }
-  save()
   res.json({ success: true })
 })
 
@@ -287,8 +283,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: '服务器内部错误' })
 })
 
-// ── Start ─────────────────────────────────────────────
-
 function getLanIp() {
   const nets = os.networkInterfaces()
   for (const name of Object.keys(nets)) {
@@ -308,17 +302,22 @@ app.get('*', (req, res) => {
   }
 })
 
-app.listen(PORT, '0.0.0.0', () => {
-  const lanIp = getLanIp()
-  console.log('')
-  console.log('  ========================================')
-  console.log('    Restaurant POS Server v1.0')
-  console.log('  ========================================')
-  console.log('')
-  console.log(`  Local:   http://localhost:${PORT}`)
-  console.log(`  Network: http://${lanIp}:${PORT}`)
-  console.log(`  API:     http://${lanIp}:${PORT}/api`)
-  console.log('')
-  console.log('  Press Ctrl+C to stop')
-  console.log('')
-})
+// ── Start ─────────────────────────────────────────────
+;(async () => {
+  await init()
+
+  app.listen(PORT, '0.0.0.0', () => {
+    const lanIp = getLanIp()
+    console.log('')
+    console.log('  ========================================')
+    console.log('    Restaurant POS Server v1.0')
+    console.log('  ========================================')
+    console.log('')
+    console.log(`  Local:   http://localhost:${PORT}`)
+    console.log(`  Network: http://${lanIp}:${PORT}`)
+    console.log(`  API:     http://${lanIp}:${PORT}/api`)
+    console.log('')
+    console.log('  Press Ctrl+C to stop')
+    console.log('')
+  })
+})()

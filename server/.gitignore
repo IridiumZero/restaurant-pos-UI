@@ -1,2 +1,6 @@
 node_modules/
 data.json
+data.json.migrated
+data.sqlite
+data.sqlite.bak
+data.sqlite.tmp

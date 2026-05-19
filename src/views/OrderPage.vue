@@ -187,7 +187,7 @@ const activeCategory = ref('全部')
 const loading = ref(false)
 const serverOk = ref(false)
 function isCapacitorApp() {
-  return location.origin.startsWith('https://localhost') || location.origin.startsWith('capacitor://')
+  return !!(window.Capacitor) || location.origin.startsWith('capacitor://')
 }
 
 function isCapacitorUrl(url) {

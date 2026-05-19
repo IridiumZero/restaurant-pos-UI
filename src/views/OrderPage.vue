@@ -186,7 +186,7 @@ const tableNumber = ref(null)
 const activeCategory = ref('全部')
 const loading = ref(false)
 const serverOk = ref(false)
-const serverUrl = ref(localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000')
+const serverUrl = ref(localStorage.getItem('serverUrl') || (isCapacitorApp() ? '' : (location.origin || 'http://localhost:3000')))
 
 // Waiter
 const currentUser = ref(null)
@@ -283,28 +283,41 @@ function saveServerUrl() {
   loadDishes()
 }
 
+function isCapacitorApp() {
+  return location.origin.startsWith('https://localhost') || location.origin.startsWith('capacitor://')
+}
+
 async function checkServer() {
-  try {
-    await api.login('admin', 'invalid') // Will fail but proves server is reachable
-  } catch (e) {
-    serverOk.value = e.message !== 'Failed to fetch'
+  // If inside APK and no server URL ever saved, skip probe — show config dialog
+  if (isCapacitorApp() && !localStorage.getItem('serverUrl')) {
+    serverOk.value = false
+    return
   }
-  // Actually check by trying auth/me with stored token
-  try {
-    const token = localStorage.getItem('token')
-    if (token) {
+
+  const token = localStorage.getItem('token')
+  if (token) {
+    try {
       const res = await fetch(`${serverUrl.value}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-      serverOk.value = res.ok
-      if (res.ok) {
+      const ct = res.headers.get('Content-Type') || ''
+      if (res.ok && ct.includes('application/json')) {
         const user = await res.json()
         currentUser.value = user
+        serverOk.value = true
         await loadMyOrders()
+        return
       }
-    } else {
-      // Just try a basic fetch
-      const res = await fetch(`${serverUrl.value}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'x', password: 'x' }) })
-      serverOk.value = true // Server responded
-    }
+    } catch { /* fall through */ }
+  }
+
+  // Basic connectivity check — must get JSON, not HTML from Capacitor webview
+  try {
+    const res = await fetch(`${serverUrl.value}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'x', password: 'x' })
+    })
+    const ct = res.headers.get('Content-Type') || ''
+    serverOk.value = ct.includes('application/json')
   } catch {
     serverOk.value = false
   }

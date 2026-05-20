@@ -12,8 +12,8 @@
       </div>
 
       <el-form :model="form" :rules="rules" ref="formRef" @submit.prevent="handleLogin">
-        <el-form-item prop="username">
-          <el-input v-model="form.username" :placeholder="t('login.placeholderUser')" size="large">
+        <el-form-item prop="employeeNo">
+          <el-input v-model="form.employeeNo" :placeholder="t('login.placeholderUser')" size="large">
             <template #prefix><el-icon><User /></el-icon></template>
           </el-input>
         </el-form-item>
@@ -28,7 +28,6 @@
           </el-button>
         </el-form-item>
       </el-form>
-      <p class="hint">{{ t('login.hint') }}</p>
       <div class="lang-switch">
         <el-select v-model="currentLang" size="small" style="width: 130px" @change="setLocale">
           <el-option v-for="opt in localeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -53,10 +52,10 @@ const formRef = ref(null)
 const loading = ref(false)
 const serverUrl = ref(localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000')
 
-const form = reactive({ username: 'admin', password: '123456' })
+const form = reactive({ employeeNo: 'admin', password: '123456' })
 const rules = {
-  username: [{ required: true, message: 'Required', trigger: 'blur' }],
-  password: [{ required: true, message: 'Required', trigger: 'blur' }],
+  employeeNo: [{ required: true, message: t('common.required'), trigger: 'blur' }],
+  password: [{ required: true, message: t('common.required'), trigger: 'blur' }],
 }
 
 function saveServerUrl() {
@@ -70,7 +69,12 @@ async function handleLogin() {
   saveServerUrl()
   loading.value = true
   try {
-    const res = await api.login(form.username, form.password)
+    const res = await api.login(form.employeeNo, form.password)
+    if (res.user.role !== 'admin' && res.user.role !== 'cashier') {
+      ElMessage.error(t('login.accessDenied'))
+      loading.value = false
+      return
+    }
     localStorage.setItem('token', res.token)
     localStorage.setItem('isLoggedIn', 'true')
     localStorage.setItem('user', JSON.stringify(res.user))
@@ -83,8 +87,11 @@ async function handleLogin() {
 }
 
 onMounted(() => {
-  // Don't auto-save — if the user has a stale URL in localStorage from a
-  // previous session, it would overwrite the correct location.origin default.
+  const msg = sessionStorage.getItem('kickedOutMsg')
+  if (msg) {
+    sessionStorage.removeItem('kickedOutMsg')
+    setTimeout(() => ElMessage.warning(msg), 300)
+  }
 })
 </script>
 

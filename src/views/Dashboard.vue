@@ -3,7 +3,7 @@
     <!-- 菜品区 -->
     <div class="menu-panel">
       <el-radio-group v-model="activeCategory" size="large">
-        <el-radio-button value="全部">全部</el-radio-button>
+        <el-radio-button value="全部">全部凄凄切切</el-radio-button>
         <el-radio-button v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</el-radio-button>
       </el-radio-group>
       <div class="dish-grid">

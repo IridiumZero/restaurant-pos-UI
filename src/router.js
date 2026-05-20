@@ -27,13 +27,23 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true'
-  if (to.matched.some((r) => r.meta.requiresAuth) && !isLoggedIn) {
-    next('/login')
-  } else if (to.path === '/login' && isLoggedIn) {
-    next('/admin')
-  } else {
-    next()
+  let userRole = ''
+  try {
+    userRole = JSON.parse(localStorage.getItem('user') || '{}').role || ''
+  } catch {}
+
+  // Admin routes: must be logged in AND have admin or cashier role
+  if (to.matched.some((r) => r.meta.requiresAuth)) {
+    if (!isLoggedIn) return next('/login')
+    if (userRole !== 'admin' && userRole !== 'cashier') return next('/order')
   }
+
+  // Already logged in and visiting /login
+  if (to.path === '/login' && isLoggedIn) {
+    return next(userRole === 'waiter' ? '/order' : '/admin')
+  }
+
+  next()
 })
 
 export default router

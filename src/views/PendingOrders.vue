@@ -14,18 +14,25 @@
         <div class="order-main">
           <div class="order-left">
             <span class="order-no">#{{ order.id }}</span>
-            <el-tag type="warning" size="small">{{ order.table_number }} {{ t('order.table') }}</el-tag>
+            <el-tag :type="order.status === 'cancelled' ? 'danger' : 'warning'" size="small">{{ order.table_number }} {{ t('order.table') }}</el-tag>
             <span class="order-waiter-name">{{ order.waiter_name || '—' }}</span>
+            <el-tag v-if="order.status === 'cancelled'" type="danger" size="small" effect="dark">{{ t('admin.cancelSuccess') }}</el-tag>
           </div>
           <div class="order-mid">
             <div class="order-items">
-              <span v-for="(item, idx) in (order.items || [])" :key="idx" class="item-tag">{{ item.dish_name }}×{{ item.quantity }}</span>
+              <span v-for="(item, idx) in (order.items || [])" :key="idx" class="item-tag">{{ getItemName(item) }}×{{ item.quantity }}</span>
             </div>
             <span class="order-time">{{ formatTime(order.created_at) }}</span>
           </div>
           <div class="order-right">
             <span class="order-total">{{ formatCurrency(order.total_amount) }}</span>
-            <el-button type="primary" @click="showCheckout(order)">{{ t('admin.checkout') }}</el-button>
+            <template v-if="order.status === 'cancelled'">
+              <el-button type="warning" size="small" @click="handleReopen(order)">{{ t('admin.reopenOrder') }}</el-button>
+            </template>
+            <template v-else>
+              <el-button type="primary" @click="showCheckout(order)">{{ t('admin.checkout') }}</el-button>
+              <el-button type="danger" size="small" plain @click="handleCancel(order)">{{ t('admin.cancelOrder') }}</el-button>
+            </template>
           </div>
         </div>
       </div>
@@ -69,20 +76,20 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { RefreshRight } from '@element-plus/icons-vue'
-import { useI18n } from '../i18n'
+import { useI18n, getDishName } from '../i18n'
 import { api } from '../api'
 
 const { t, formatCurrency } = useI18n()
 
 const loading = ref(false), paying = ref(false)
-const allOrders = ref([]), waiterList = ref([]), waiterFilter = ref(null)
+const allOrders = ref([]), waiterList = ref([]), waiterFilter = ref(null), dishMap = ref({})
 const checkoutVisible = ref(false), currentOrder = ref(null)
 const paymentMethod = ref('现金'), cashReceived = ref(0)
 
 const filteredOrders = computed(() => {
-  let r = allOrders.value.filter(o => o.status === 'pending')
+  let r = allOrders.value.filter(o => o.status === 'pending' || o.status === 'cancelled')
   if (waiterFilter.value) r = r.filter(o => o.waiter_id === waiterFilter.value)
   return r
 })
@@ -96,12 +103,26 @@ function formatTime(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+function getItemName(item) {
+  const d = dishMap.value[item.dish_id]
+  return d ? getDishName(d) : item.dish_name
+}
+
+async function loadDishes() {
+  try {
+    const list = await api.getDishes()
+    dishMap.value = {}
+    list.forEach(d => { dishMap.value[d.id] = d })
+  } catch {}
+}
+
 async function loadOrders() {
   loading.value = true
   try {
-    allOrders.value = await api.getOrders()
-    waiterList.value = await api.getWaiters()
-  } catch (e) { ElMessage.error('Failed to load: ' + e.message) }
+    const [orders, waiters] = await Promise.all([api.getOrders(), api.getWaiters(), loadDishes()])
+    allOrders.value = orders
+    waiterList.value = waiters
+  } catch (e) { ElMessage.error(t('common.loadError', { msg: e.message })) }
   loading.value = false
 }
 
@@ -110,6 +131,23 @@ function showCheckout(order) {
   paymentMethod.value = '现金'
   cashReceived.value = 0
   checkoutVisible.value = true
+}
+
+async function handleCancel(order) {
+  try {
+    await ElMessageBox.confirm(t('admin.cancelOrderConfirm'), t('common.confirm'), {
+      confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel'), type: 'warning'
+    })
+    await api.cancelOrder(order.id)
+    ElMessage.success(t('admin.cancelSuccess'))
+    await loadOrders()
+  } catch {}
+}
+
+async function handleReopen(order) {
+  await api.reopenOrder(order.id)
+  ElMessage.success(t('admin.reopenSuccess'))
+  await loadOrders()
 }
 
 async function handleCheckout() {
@@ -141,7 +179,7 @@ function printReceipt(order) {
     `${t('receipt.time')}: ${time}`,
     `${t('receipt.payment')}: ${paymentMethod.value}`,
     t('receipt.separator'),
-    ...(order.items || []).map(i => `  ${i.dish_name} ×${i.quantity}  ${formatCurrency(i.dish_price * i.quantity)}`),
+    ...(order.items || []).map(i => `  ${getItemName(i)} ×${i.quantity}  ${formatCurrency(i.dish_price * i.quantity)}`),
     t('receipt.separator'),
     `${t('receipt.total')}: ${formatCurrency(order.total_amount)}`,
   ]

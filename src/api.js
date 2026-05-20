@@ -14,15 +14,38 @@ async function request(method, path, body, isPublic) {
   })
 
   const data = await res.json().catch(() => ({ message: res.statusText }))
-  if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`)
+  if (!res.ok) {
+    if (res.status === 401 && !isPublic) {
+      // Token expired or invalidated by another login
+      localStorage.removeItem('token')
+      localStorage.removeItem('isLoggedIn')
+      localStorage.removeItem('user')
+      // Save kick-out message for the next page to show
+      if (data.message) sessionStorage.setItem('kickedOutMsg', data.message)
+      // Redirect management pages to login
+      if (window.location.hash.startsWith('#/admin')) {
+        window.location.hash = '#/login'
+      }
+    }
+    throw new Error(data.message || `HTTP ${res.status}`)
+  }
   return data
 }
 
 export const api = {
+  // ── Upload ───────────────────────────
+  uploadImage(base64) { return request('POST', '/api/upload', { image: base64 }) },
+
   // ── Auth ──────────────────────────────
-  login(username, password) {
-    return request('POST', '/api/auth/login', { username, password }, true)
+  login(employeeNo, password) {
+    return request('POST', '/api/auth/login', { employeeNo, password }, true)
   },
+
+  // ── Categories ────────────────────────
+  getCategories() { return request('GET', '/api/categories') },
+  addCategory(data) { return request('POST', '/api/categories', data) },
+  updateCategory(id, data) { return request('PUT', `/api/categories/${id}`, data) },
+  deleteCategory(id) { return request('DELETE', `/api/categories/${id}`) },
 
   // ── Dishes ────────────────────────────
   getDishes(params = {}) {
@@ -41,13 +64,14 @@ export const api = {
   addOrder(data) { return request('POST', '/api/orders', data) },
   updateOrder(id, data) { return request('PUT', `/api/orders/${id}`, data) },
   submitOrder(id) { return request('POST', `/api/orders/${id}/submit`) },
+  cancelOrder(id) { return request('POST', `/api/orders/${id}/cancel`) },
   checkoutOrder(id, data) { return request('POST', `/api/orders/${id}/checkout`, data) },
+  reopenOrder(id) { return request('POST', `/api/orders/${id}/reopen`) },
 
   // ── Employees ─────────────────────────
   getEmployees() { return request('GET', '/api/employees') },
   addEmployee(data) { return request('POST', '/api/employees', data) },
   updateEmployee(id, data) { return request('PUT', `/api/employees/${id}`, data) },
-  resetPassword(id) { return request('PUT', `/api/employees/${id}/reset-pwd`) },
 
   // ── Waiters (tablet) ─────────────────
   getWaiters() { return request('GET', '/api/waiters') },
@@ -64,4 +88,9 @@ export const api = {
     const qs = new URLSearchParams(params).toString()
     return request('GET', `/api/orders/export${qs ? '?' + qs : ''}`)
   },
+
+  // ── Database backup/restore (admin) ────
+  getDbInfo() { return request('GET', '/api/db/info') },
+  backupDb() { return request('POST', '/api/db/backup') },
+  restoreDb(name) { return request('POST', '/api/db/restore', name ? { name } : {}) },
 }

@@ -8,8 +8,8 @@
           <el-select v-model="currentLang" size="small" style="width: 100px" @change="setLocale">
             <el-option v-for="opt in localeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
-          <el-button size="small" @click="showServerConfig = true" :icon="Setting">SVR</el-button>
-          <el-button size="small" @click="$router.push('/login')">{{ t('nav.admin') }}</el-button>
+          <el-button size="small" @click="showServerConfig = true" :icon="Setting">{{ t('common.server') }}</el-button>
+          <!-- <el-button size="small" @click="$router.push('/login')">{{ t('nav.admin') }}</el-button> -->
         </div>
       </div>
 
@@ -37,7 +37,7 @@
       <div class="category-bar">
         <el-radio-group v-model="activeCategory" size="large">
           <el-radio-button value="全部">{{ t('common.all') }}</el-radio-button>
-          <el-radio-button v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</el-radio-button>
+          <el-radio-button v-for="cat in categories" :key="cat.name" :value="cat.name">{{ cat.label }}</el-radio-button>
         </el-radio-group>
       </div>
 
@@ -46,16 +46,20 @@
           v-for="dish in filteredDishes"
           :key="dish.id"
           class="dish-card"
-          :class="{ inactive: dish.status !== 'active' || dish.stock === 0 }"
+          :class="{ inactive: dish.status === 'inactive', soldout: dish.status === 'sold_out' }"
           @click="addToCart(dish)"
         >
-          <div class="dish-avatar" :style="{ background: avatarColor(dish.name) }">{{ dish.name.charAt(0) }}</div>
+          <div class="dish-avatar">
+            <img v-if="dish.image" :src="dish.image" class="dish-avatar-img" />
+            <span v-else class="dish-avatar-letter" :style="{ background: avatarColor(getDishName(dish)) }">{{ getDishName(dish).charAt(0) }}</span>
+          </div>
           <div class="dish-info">
-            <span class="dish-name">{{ dish.name }}</span>
+            <span class="dish-name">{{ getDishName(dish) }}</span>
+            <span v-if="getDishRemark(dish)" class="dish-remark">{{ getDishRemark(dish) }}</span>
             <span class="dish-price">{{ formatCurrency(dish.price) }}</span>
           </div>
           <span v-if="cartQty(dish.id)" class="dish-badge">{{ cartQty(dish.id) }}</span>
-          <span v-if="dish.stock === 0 || dish.status !== 'active'" class="dish-soldout">—</span>
+          <span v-if="dish.status === 'sold_out'" class="dish-soldout">{{ t('menu.soldOut') }}</span>
         </div>
         <div v-if="!loading && !filteredDishes.length" class="empty-hint">{{ t('menu.noDish') }}</div>
       </div>
@@ -142,7 +146,7 @@
     <el-dialog v-model="showWaiterLogin" :title="t('order.waiterLogin')" width="340px">
       <el-form @submit.prevent="handleWaiterLogin">
         <el-form-item>
-          <el-input v-model="waiterForm.username" :placeholder="t('login.placeholderUser')" size="large">
+          <el-input v-model="waiterForm.employeeNo" :placeholder="t('login.placeholderUser')" size="large">
             <template #prefix><el-icon><User /></el-icon></template>
           </el-input>
         </el-form-item>
@@ -155,13 +159,11 @@
           {{ t('login.loginBtn') }}
         </el-button>
       </el-form>
-      <p style="text-align:center;color:#909399;font-size:12px;margin-top:8px">{{ t('login.hint') }}</p>
     </el-dialog>
 
     <!-- 服务器配置对话框 -->
-    <el-dialog v-model="showServerConfig" title="Server URL" width="380px">
+    <el-dialog v-model="showServerConfig" :title="t('common.serverUrl')" width="380px">
       <el-input v-model="serverUrlInput" placeholder="http://192.168.x.x:3000" size="large" />
-      <p style="margin:8px 0 0;font-size:11px;color:#909399">{{ t('login.serverHint') }}</p>
       <template #footer>
         <el-button @click="showServerConfig = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="saveServerUrl">{{ t('common.save') }}</el-button>
@@ -174,7 +176,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Minus, Plus, Delete, UserFilled, ArrowRight, Setting } from '@element-plus/icons-vue'
-import { useI18n, localeOptions } from '../i18n'
+import { useI18n, localeOptions, getDishName, getCategoryName, getDishRemark } from '../i18n'
 import { api } from '../api'
 
 const { t, locale, setLocale, formatCurrency } = useI18n()
@@ -205,7 +207,7 @@ const serverUrl = ref((_savedUrl && !isCapacitorUrl(_savedUrl)) ? _savedUrl : (i
 const currentUser = ref(null)
 const showWaiterLogin = ref(false)
 const waiterLoading = ref(false)
-const waiterForm = ref({ username: 'waiter01', password: '123456' })
+const waiterForm = ref({ employeeNo: 'waiter01', password: '123456' })
 
 // My orders
 const myDrafts = ref([])
@@ -216,10 +218,20 @@ const orderTab = ref('draft')
 const showServerConfig = ref(false)
 const serverUrlInput = ref(serverUrl.value)
 
-const categories = computed(() => [...new Set(dishes.value.map(d => d.category))].sort())
+const categoryList = ref([])
+const dishMap = computed(() => {
+  const map = {}
+  dishes.value.forEach(d => { map[d.id] = d })
+  return map
+})
+const categories = computed(() => {
+  return categoryList.value
+    .filter(cat => dishes.value.some(d => (d.category || '').split(',').includes(cat.name)))
+    .map(cat => ({ name: cat.name, label: getCategoryName(cat) }))
+})
 const filteredDishes = computed(() => {
-  let r = dishes.value.filter(d => d.status === 'active')
-  if (activeCategory.value !== '全部') r = r.filter(d => d.category === activeCategory.value)
+  let r = dishes.value.filter(d => d.status === 'active' || d.status === 'sold_out')
+  if (activeCategory.value !== '全部') r = r.filter(d => (d.category || '').split(',').includes(activeCategory.value))
   return r
 })
 const totalAmount = computed(() => cart.value.reduce((s, i) => s + i.price * i.qty, 0))
@@ -227,9 +239,9 @@ const totalAmount = computed(() => cart.value.reduce((s, i) => s + i.price * i.q
 function cartQty(dishId) { const it = cart.value.find(c => c.dishId === dishId); return it ? it.qty : 0 }
 
 function addToCart(dish) {
-  if (dish.stock === 0 || dish.status !== 'active') return
+  if (dish.status === 'inactive' || dish.status === 'sold_out') return
   const ex = cart.value.find(c => c.dishId === dish.id)
-  ex ? ex.qty++ : cart.value.push({ dishId: dish.id, name: dish.name, price: dish.price, qty: 1 })
+  ex ? ex.qty++ : cart.value.push({ dishId: dish.id, name: getDishName(dish), price: dish.price, qty: 1 })
 }
 function increaseQty(i) { cart.value[i].qty++ }
 function decreaseQty(i) { cart.value[i].qty > 1 ? cart.value[i].qty-- : cart.value.splice(i, 1) }
@@ -255,7 +267,7 @@ async function saveAsDraft() {
 }
 
 function continueDraft(order) {
-  cart.value = (order.items || []).map(i => ({ dishId: i.dish_id, name: i.dish_name, price: i.dish_price, qty: i.quantity }))
+  cart.value = (order.items || []).map(i => ({ dishId: i.dish_id, name: getDishName(dishMap.value[i.dish_id]) || i.dish_name, price: i.dish_price, qty: i.quantity }))
   tableNumber.value = order.table_number
   // Delete draft
   api.updateOrder(order.id, { items: [], totalAmount: 0, status: 'cancelled', tableNumber: order.table_number }).catch(() => {})
@@ -274,8 +286,8 @@ async function loadMyOrders() {
 async function handleWaiterLogin() {
   waiterLoading.value = true
   try {
-    const res = await api.login(waiterForm.value.username, waiterForm.value.password)
-    if (res.user.role !== 'waiter') { ElMessage.error('请使用服务员账号登录'); waiterLoading.value = false; return }
+    const res = await api.login(waiterForm.value.employeeNo, waiterForm.value.password)
+    if (res.user.role !== 'waiter') { ElMessage.error(t('order.waiterRequired')); waiterLoading.value = false; return }
     localStorage.setItem('token', res.token)
     currentUser.value = res.user
     showWaiterLogin.value = false
@@ -286,14 +298,13 @@ async function handleWaiterLogin() {
   waiterLoading.value = false
 }
 
-function saveServerUrl() {
+async function saveServerUrl() {
   const url = serverUrlInput.value.replace(/\/+$/, '')
   localStorage.setItem('serverUrl', url)
   serverUrl.value = url
   showServerConfig.value = false
-  // Retry connection
-  checkServer()
-  loadDishes()
+  await checkServer()
+  if (currentUser.value) await loadDishes()
 }
 
 async function checkServer() {
@@ -313,6 +324,14 @@ async function checkServer() {
         currentUser.value = user
         serverOk.value = true
         await loadMyOrders()
+        return
+      }
+      if (res.status === 401) {
+        const data = await res.json().catch(() => ({}))
+        if (data.message) ElMessage.warning(data.message)
+        localStorage.removeItem('token')
+        currentUser.value = null
+        serverOk.value = false
         return
       }
     } catch { /* fall through */ }
@@ -335,10 +354,13 @@ async function checkServer() {
 async function loadDishes() {
   try {
     loading.value = true
-    dishes.value = await api.getDishes()
+    const [d, cats] = await Promise.all([api.getDishes(), api.getCategories()])
+    dishes.value = d
+    categoryList.value = cats
     serverOk.value = true
-  } catch {
+  } catch (e) {
     serverOk.value = false
+    if (e.message) ElMessage.error(e.message)
   } finally { loading.value = false }
 }
 
@@ -349,7 +371,7 @@ function avatarColor(name) {
   return colors[Math.abs(hash) % colors.length]
 }
 
-watch(setLocale, v => { currentLang.value = v })
+watch(locale, v => { currentLang.value = v })
 
 onMounted(async () => {
   await checkServer()
@@ -379,17 +401,28 @@ onMounted(async () => {
 .server-status.ok .status-dot { background: #67c23a; }
 .server-status.err .status-dot { background: #f56c6c; }
 .category-bar { padding: 8px 16px; overflow-x: auto; white-space: nowrap; flex-shrink: 0; border-bottom: 1px solid #ebeef5; }
-.dish-grid { flex:1; overflow-y:auto; padding:10px; display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; align-content:start; -webkit-overflow-scrolling:touch; }
-.dish-card { position:relative; display:flex; flex-direction:column; align-items:center; padding:14px 8px; background:#fafafa; border-radius:12px; cursor:pointer; transition:background 0.15s; -webkit-tap-highlight-color:transparent; user-select:none; min-height:110px; }
+/* ── 菜品卡片（自适应） ── */
+.dish-grid { flex:1; overflow-y:auto; padding:10px; display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; align-content:start; -webkit-overflow-scrolling:touch; }
+.dish-card { position:relative; display:flex; flex-direction:column; align-items:center; padding:14px 8px; background:#fafafa; border-radius:12px; cursor:pointer; transition:background 0.15s; -webkit-tap-highlight-color:transparent; user-select:none; }
 .dish-card:active { background:#e6f0ff; }
 .dish-card.inactive { opacity:0.45; cursor:not-allowed; }
-.dish-avatar { width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;margin-bottom:6px; }
-.dish-info { text-align:center; }
-.dish-name { display:block; font-size:14px; font-weight:600; color:#303133; margin-bottom:2px; }
-.dish-price { display:block; font-size:15px; font-weight:bold; color:#f56c6c; }
-.dish-badge { position:absolute; top:6px;right:6px; background:#f56c6c; color:#fff; font-size:11px; font-weight:bold; min-width:20px;height:20px;border-radius:10px; display:flex;align-items:center;justify-content:center; padding:0 4px; }
-.dish-soldout { position:absolute; top:50%;left:50%;transform:translate(-50%,-50%); font-size:32px; color:#c0c4cc; font-weight:bold; }
-.right-panel { width:340px; display:flex; flex-direction:column; background:#fff; border-left:1px solid #e4e7ed; flex-shrink:0; }
+.dish-card.soldout { opacity:0.6; }
+
+/* 头像：用百分比+clamp实现随卡片宽度自适应，56px~120px 之间 */
+.dish-avatar { width:clamp(56px, 55%, 120px); aspect-ratio:1; border-radius:12px; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:8px; flex-shrink:0; }
+.dish-avatar-img { width:100%; height:100%; object-fit:cover; }
+.dish-avatar-letter { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:clamp(18px, 10vw, 32px); font-weight:bold; }
+
+.dish-info { text-align:center; width:100%; }
+.dish-name { display:block; font-size:clamp(12px, 2.5vw, 15px); font-weight:600; color:#303133; margin-bottom:2px; }
+.dish-remark { display:block; font-size:clamp(10px, 2vw, 12px); color:#909399; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dish-price { display:block; font-size:clamp(13px, 2.5vw, 16px); font-weight:bold; color:#f56c6c; }
+
+.dish-badge { position:absolute; top:6px;right:6px; background:#f56c6c; color:#fff; font-size:clamp(10px, 2vw, 12px); font-weight:bold; min-width:20px;height:20px;border-radius:10px; display:flex;align-items:center;justify-content:center; padding:0 4px; }
+.dish-soldout { position:absolute; top:50%;left:50%;transform:translate(-50%,-50%); font-size:clamp(12px, 2vw, 15px); color:#f56c6c; font-weight:bold; background:rgba(255,255,255,0.9); padding:4px 12px; border-radius:4px; pointer-events:none; }
+
+/* ── 右侧购物车 ── */
+.right-panel { width:clamp(280px, 30vw, 360px); display:flex; flex-direction:column; background:#fff; border-left:1px solid #e4e7ed; flex-shrink:0; }
 .cart-header { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid #ebeef5; flex-shrink:0; }
 .cart-header h3 { margin:0; font-size:16px; }
 .cart-count { color:#909399; font-size:12px; }
@@ -417,15 +450,20 @@ onMounted(async () => {
 .mini-order-card:active { background:#e6f0ff; }
 .mini-empty { text-align:center; color:#c0c4cc; padding:20px 0; font-size:13px; }
 .empty-hint { grid-column:1/-1; text-align:center; color:#c0c4cc; padding:60px 0; font-size:14px; }
-@media (max-width:768px) {
+
+/* ── 平板竖屏 / 小窗 ── */
+@media (max-width:900px) {
+  .dish-grid { grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
+  .right-panel { width:280px; }
+}
+
+/* ── 手机：上下布局 ── */
+@media (max-width:600px) {
   .order-page { flex-direction:column; }
-  .left-panel { flex:none; height:52%; }
-  .dish-grid { grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:6px; padding:6px; }
-  .dish-card { padding:8px 4px; min-height:90px; }
-  .dish-avatar { width:40px;height:40px;font-size:18px; }
-  .dish-name { font-size:12px; }
-  .dish-price { font-size:13px; }
+  .left-panel { flex:none; height:55%; }
+  .dish-grid { grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px; padding:6px; }
+  .dish-card { padding:10px 4px; }
   .right-panel { width:100%; flex:1; border-left:none; border-top:1px solid #e4e7ed; }
-  .cart-list { max-height:100px; }
+  .cart-list { max-height:120px; }
 }
 </style>

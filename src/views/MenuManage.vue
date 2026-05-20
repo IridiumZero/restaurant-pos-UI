@@ -17,7 +17,7 @@
         <div class="dish-row-main">
           <span class="dish-row-id">#{{ dish.id }}</span>
           <div class="dish-thumb">
-            <img v-if="dish.image" :src="dish.image" />
+            <img v-if="dish.image" :src="imageUrl(dish.image)" />
             <span v-else class="dish-thumb-letter" :style="{ background: avatarColor(getDishName(dish)) }">{{ getDishName(dish).charAt(0) }}</span>
           </div>
           <span class="dish-row-name">{{ getDishName(dish) }}</span>
@@ -55,7 +55,7 @@
           <div class="image-upload">
             <input type="file" accept="image/*" @change="handleImageSelect" ref="fileInput" style="display:none" />
             <div class="image-preview" v-if="imagePreview">
-              <img :src="imagePreview" />
+              <img :src="imageUrl(imagePreview)" />
               <el-button size="small" type="danger" circle class="image-clear-btn" @click="clearImage">
                 <el-icon><Close /></el-icon>
               </el-button>
@@ -121,6 +121,7 @@ import { useI18n, getDishName, getCategoryName, getDishRemark } from '../i18n'
 import { api } from '../api'
 
 const { t, locale, formatCurrency } = useI18n()
+const serverBase = localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000'
 const dishes = ref([])
 const dialogVisible = ref(false), isEdit = ref(false), editingId = ref(null), formRef = ref(null), loading = ref(false), saving = ref(false), filterCategory = ref('全部')
 const imagePreview = ref(''), imageUploading = ref(false), fileInput = ref(null)
@@ -206,6 +207,12 @@ async function handleSave() {
     dialogVisible.value = false; await load()
   } catch (e) { ElMessage.error(e.message) }
   saving.value = false
+}
+
+function imageUrl(path) {
+  if (!path) return ''
+  if (path.startsWith('http')) return path
+  return serverBase + path
 }
 
 function avatarColor(name) {

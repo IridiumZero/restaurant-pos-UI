@@ -50,7 +50,7 @@
           @click="addToCart(dish)"
         >
           <div class="dish-avatar">
-            <img v-if="dish.image" :src="dish.image" class="dish-avatar-img" />
+            <img v-if="dish.image" :src="imageUrl(dish.image)" class="dish-avatar-img" />
             <span v-else class="dish-avatar-letter" :style="{ background: avatarColor(getDishName(dish)) }">{{ getDishName(dish).charAt(0) }}</span>
           </div>
           <div class="dish-info">
@@ -362,6 +362,12 @@ async function loadDishes() {
     serverOk.value = false
     if (e.message) ElMessage.error(e.message)
   } finally { loading.value = false }
+}
+
+function imageUrl(path) {
+  if (!path) return ''
+  if (path.startsWith('http')) return path
+  return (serverUrl.value || '') + path
 }
 
 function avatarColor(name) {

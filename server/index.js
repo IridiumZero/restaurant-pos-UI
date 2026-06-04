@@ -6,6 +6,7 @@ const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const os = require('os')
 const { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword } = require('./db')
+const { generateReceipt, formatReceiptText, printText, listPrinters, PRINTER_NAME } = require('./printer')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'restaurant-pos-secret-change-in-production'
 const PORT = process.env.PORT || 3000
@@ -247,18 +248,71 @@ app.post('/api/orders/:id/cancel', auth(['admin', 'cashier']), (req, res) => {
 })
 
 app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
-  const { paymentMethod, cashReceived, change } = req.body
-  update('orders', req.params.id, {
+  const { paymentMethod, cashReceived, change, lang } = req.body
+  const orderId = parseInt(req.params.id)
+  update('orders', orderId, {
     status: 'completed', payment_method: paymentMethod,
     cash_received: cashReceived || null, change_amount: change || null,
     cashier_id: req.user.id, paid_at: new Date().toISOString()
   })
-  res.json({ success: true })
+
+  // Auto-print receipt
+  let printResult = { success: false, error: 'No order found' }
+  try {
+    const order = findOne('orders', o => o.id === orderId)
+    if (order) {
+      order.items = find('order_items', oi => oi.order_id === order.id)
+      // Enrich items with translated dish names from dishes table
+      for (const item of order.items) {
+        const dish = findOne('dishes', d => d.id === item.dish_id)
+        if (dish) {
+          item.dish_name_pt = dish.name_pt
+          item.dish_name_en = dish.name_en
+        }
+      }
+      const receiptLines = generateReceipt(order, lang || 'zh')
+      const receiptText = formatReceiptText(receiptLines)
+      printResult = printText(receiptText)
+    }
+  } catch (e) {
+    printResult = { success: false, error: e.message }
+    console.error('Print exception:', e.message)
+  }
+
+  res.json({ success: true, print: printResult })
 })
 
 app.post('/api/orders/:id/reopen', auth(['admin', 'cashier']), (req, res) => {
   update('orders', req.params.id, { status: 'pending' })
   res.json({ success: true })
+})
+
+// ── Receipt Printing ─────────────────────────────────
+
+app.post('/api/orders/:id/print', auth(['admin', 'cashier']), (req, res) => {
+  const orderId = parseInt(req.params.id)
+  const order = findOne('orders', o => o.id === orderId)
+  if (!order) return res.status(404).json({ message: '订单不存在' })
+  order.items = find('order_items', oi => oi.order_id === order.id)
+  for (const item of order.items) {
+    const dish = findOne('dishes', d => d.id === item.dish_id)
+    if (dish) {
+      item.dish_name_pt = dish.name_pt
+      item.dish_name_en = dish.name_en
+    }
+  }
+  try {
+    const receiptLines = generateReceipt(order, req.query.lang || 'zh')
+    const receiptText = formatReceiptText(receiptLines)
+    printText(receiptText)
+    res.json({ success: true, printer: PRINTER_NAME || '(默认打印机)' })
+  } catch (e) {
+    res.status(500).json({ message: '打印失败: ' + e.message })
+  }
+})
+
+app.get('/api/printers', auth(['admin', 'cashier']), (req, res) => {
+  res.json({ printers: listPrinters(), current: PRINTER_NAME || '(默认打印机)' })
 })
 
 // ── Employees ─────────────────────────────────────────

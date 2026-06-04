@@ -72,6 +72,7 @@ Mozambique/
 │   ├── package.json
 │   ├── index.js           # Express 服务 + 所有 API 路由
 │   ├── db.js              # SQLite 数据库存储 + 种子数据
+│   ├── printer.js         # 小票生成 + Windows 打印
 │   └── data.sqlite        # 运行时数据库文件 (自动生成)
 ├── src/
 │   ├── main.js
@@ -103,7 +104,7 @@ Mozambique/
 
 ### 管理端 (/admin)
 - 仅管理员和收银员可登录
-- 待结账订单 → 结账（现金/POS机）+ 模拟打印小票
+- 待结账订单 → 结账（现金/POS机）+ 自动打印小票
 - 菜品管理（增删改查 + 排序 + 上架/下架/售罄三态 + 图片上传 + 分类管理含排序 + 中/葡/英三语菜名）
 - 订单历史（按日期/服务员/支付方式筛选）
 - 销售报表（ECharts 图表）— 仅管理员可见
@@ -125,6 +126,58 @@ Mozambique/
 | cashier01 | 123456 | 收银员 |
 | waiter01 | 123456 | 服务员 |
 | waiter02 | 123456 | 服务员 |
+
+## 小票打印机配置
+
+结账时服务器自动打印小票到 Windows 打印机。使用 .NET PrintDocument 精确控制纸张尺寸（58mm × 80mm），内容自动换行，打印完成后自动停止。
+
+### 设置
+
+1. 安装打印机驱动（厂商提供），确保打印机设为**系统默认打印机**
+2. 启动服务器：
+
+```bash
+# 58mm 热敏纸（默认每行 24 字符）
+cd server && npm start
+
+# 80mm 热敏纸
+set RECEIPT_WIDTH=42 && set RECEIPT_WIDTH_MM=80 && cd server && npm start
+
+# 指定打印机名称（不设则用系统默认）
+set PRINTER_NAME=WHJ717 && cd server && npm start
+```
+
+| 环境变量 | 说明 | 默认值 |
+|----------|------|--------|
+| `PRINTER_NAME` | 打印机名称（不设则用系统默认打印机） | (空) |
+| `RECEIPT_WIDTH` | 每行最大字符数 (ASCII)，中文占 2 字符 | 24 |
+| `RECEIPT_WIDTH_MM` | 纸张宽度 (mm) | 58 |
+| `RECEIPT_HEIGHT_MM` | 小票预估高度 (mm)，影响走纸长度 | 80 |
+
+### 打印原理
+
+通过 .NET `PrintDocument` + 自定义 `PaperSize` 控制纸张尺寸，绕过驱动的 A4 默认设置，解决内容偏移和走纸不停的问题。打印机名称如未指定则自动检测系统默认打印机。
+
+### 查看可用打印机
+
+```bash
+curl http://localhost:3000/api/printers -H "Authorization: Bearer <token>"
+```
+
+### 重新打印
+
+当打印失败或需要补打小票时，在后台管理端重新打开已完成订单即可补打。
+
+```bash
+# 或通过 API 手动补打
+curl -X POST http://localhost:3000/api/orders/:id/print -H "Authorization: Bearer <token>"
+```
+
+### 注意事项
+
+- 打印失败不会阻塞结账流程，收银员可正常完成结账
+- 如果需要补打，可通过 API 或后台管理端操作
+- 小票内容跟随系统语言设置（中文/葡萄牙语/English），包括标题、字段标签、菜品名称和支付方式
 
 ## 数据存储
 
@@ -152,7 +205,9 @@ Mozambique/
 | POST | /api/orders | 登录用户 | 创建订单（草稿/直接提交） |
 | PUT | /api/orders/:id | 登录用户 | 修改订单（更新菜品、金额） |
 | POST | /api/orders/:id/submit | 登录用户 | 提交草稿→待结账 |
-| POST | /api/orders/:id/checkout | admin,cashier | 结账（现金/POS） |
+| POST | /api/orders/:id/checkout | admin,cashier | 结账（现金/POS）+ 自动打印小票 |
+| POST | /api/orders/:id/print | admin,cashier | 补打小票 |
+| GET | /api/printers | admin,cashier | 列出系统打印机 |
 | GET | /api/orders/export | admin,cashier | 导出订单（支持日期/服务员/桌号筛选） |
 | GET | /api/employees | admin,cashier | 员工列表 |
 | POST | /api/employees | admin | 新增员工 |

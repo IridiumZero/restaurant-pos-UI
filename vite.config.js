@@ -11,4 +11,13 @@ export default defineConfig({
       '/uploads': 'http://localhost:3000',
     },
   },
+  build: {
+    rollupOptions: {
+      onwarn(warning, warn) {
+        // Suppress @vueuse/core pure comment annotation warnings
+        if (warning.code === 'THIS_IS_UNDEFINED' || warning.message.includes('@vueuse')) return
+        warn(warning)
+      },
+    },
+  },
 })

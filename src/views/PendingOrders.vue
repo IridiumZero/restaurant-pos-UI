@@ -81,7 +81,7 @@ import { RefreshRight } from '@element-plus/icons-vue'
 import { useI18n, getDishName } from '../i18n'
 import { api } from '../api'
 
-const { t, formatCurrency } = useI18n()
+const { t, formatCurrency, locale } = useI18n()
 
 const loading = ref(false), paying = ref(false)
 const allOrders = ref([]), waiterList = ref([]), waiterFilter = ref(null), dishMap = ref({})
@@ -154,42 +154,23 @@ async function handleCheckout() {
   paying.value = true
   try {
     const change = paymentMethod.value === '现金' ? cashReceived.value - currentOrder.value.total_amount : null
-    await api.checkoutOrder(currentOrder.value.id, {
+    const result = await api.checkoutOrder(currentOrder.value.id, {
       paymentMethod: paymentMethod.value,
       cashReceived: paymentMethod.value === '现金' ? cashReceived.value : null,
       change,
+      lang: locale.value,
     })
-    printReceipt(currentOrder.value)
-    ElMessage.success(t('admin.checkoutSuccess'))
+    if (result.print && result.print.success) {
+      ElMessage.success(t('admin.checkoutSuccess') + ' — ' + t('admin.receiptPrinted'))
+    } else {
+      const errMsg = result.print?.error || 'Unknown error'
+      console.error('Print failed:', errMsg)
+      ElMessage.warning(t('admin.checkoutSuccess') + ' — ' + t('admin.printFailed', { error: errMsg }))
+    }
     checkoutVisible.value = false
     await loadOrders()
   } catch (e) { ElMessage.error(e.message) }
   paying.value = false
-}
-
-function printReceipt(order) {
-  const pad = n => String(n).padStart(2, '0')
-  const d = new Date()
-  const time = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  const lines = [
-    t('receipt.header'),
-    `${t('receipt.orderNo')}: #${order.id}`,
-    `${t('receipt.table')}: ${order.table_number}`,
-    `${t('receipt.waiter')}: ${order.waiter_name || '—'}`,
-    `${t('receipt.time')}: ${time}`,
-    `${t('receipt.payment')}: ${paymentMethod.value}`,
-    t('receipt.separator'),
-    ...(order.items || []).map(i => `  ${getItemName(i)} ×${i.quantity}  ${formatCurrency(i.dish_price * i.quantity)}`),
-    t('receipt.separator'),
-    `${t('receipt.total')}: ${formatCurrency(order.total_amount)}`,
-  ]
-  if (paymentMethod.value === '现金') {
-    lines.push(`${t('receipt.received')}: ${formatCurrency(cashReceived.value)}`)
-    lines.push(`${t('receipt.change')}: ${formatCurrency(cashReceived.value - order.total_amount)}`)
-  }
-  lines.push(t('receipt.footer'), t('receipt.thankYou'))
-  console.log(lines.join('\n'))
-  ElMessage.success(t('admin.receiptPrinted'))
 }
 
 onMounted(loadOrders)

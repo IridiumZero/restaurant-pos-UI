@@ -67,6 +67,8 @@ export const api = {
   cancelOrder(id) { return request('POST', `/api/orders/${id}/cancel`) },
   checkoutOrder(id, data) { return request('POST', `/api/orders/${id}/checkout`, data) },
   reopenOrder(id) { return request('POST', `/api/orders/${id}/reopen`) },
+  printOrder(id, lang) { return request('POST', `/api/orders/${id}/print${lang ? '?lang=' + lang : ''}`) },
+  getPrinters() { return request('GET', '/api/printers') },
 
   // ── Employees ─────────────────────────
   getEmployees() { return request('GET', '/api/employees') },

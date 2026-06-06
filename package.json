@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "cap:sync": "npm run build && npx cap sync",
     "cap:open": "npx cap open android",
-    "cap:run": "npm run build && npx cap copy && npx cap sync"
+    "cap:run": "npm run build && npx cap copy && npx cap sync",
+    "test": "node --test server/test.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.3.4",
@@ -18,7 +19,8 @@
     "element-plus": "^2.7.0",
     "vue": "^3.4.0",
     "vue-echarts": "^7.0.3",
-    "vue-router": "^4.3.0"
+    "vue-router": "^4.3.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.3.4",

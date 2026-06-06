@@ -1,10 +1,12 @@
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
+const http = require('http')
 const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const os = require('os')
+const WebSocket = require('ws')
 const { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction } = require('./db')
 const { generateReceipt, formatReceiptText, printText, listPrinters, PRINTER_NAME } = require('./printer')
 
@@ -243,19 +245,39 @@ app.delete('/api/categories/:id', auth(['admin']), (req, res) => {
 
 // ── Orders ────────────────────────────────────────────
 
+app.get('/api/orders/export', auth(['admin', 'cashier']), (req, res) => {
+  const { start, end, waiter_id, table } = req.query
+  let result = find('orders', o => o.status === 'completed')
+  if (start) result = result.filter(o => o.paid_at >= start)
+  if (end) result = result.filter(o => o.paid_at <= end + 'T23:59:59')
+  if (waiter_id) result = result.filter(o => o.waiter_id === parseInt(waiter_id))
+  if (table) result = result.filter(o => o.table_number === parseInt(table))
+  result.sort((a, b) => b.paid_at.localeCompare(a.paid_at))
+  for (const o of result) {
+    o.items = find('order_items', oi => oi.order_id === o.id)
+  }
+  res.json(result)
+})
+
 app.get('/api/orders', auth(), (req, res) => {
-  const { status, waiter_id, table } = req.query
+  const { status, waiter_id, table, page = '1', pageSize = '20' } = req.query
   let result = find('orders', () => true)
   if (status) result = result.filter(o => o.status === status)
   if (waiter_id) result = result.filter(o => o.waiter_id === parseInt(waiter_id))
   if (table) result = result.filter(o => o.table_number === parseInt(table))
-  result.sort((a, b) => b.created_at.localeCompare(a.created_at))
+  result.sort((a, b) => b.id - a.id)
+
+  const total = result.length
+  const p = Math.max(1, parseInt(page))
+  const ps = Math.max(1, parseInt(pageSize))
+  const startIdx = (p - 1) * ps
+  result = result.slice(startIdx, startIdx + ps)
 
   // Attach items
   for (const o of result) {
     o.items = find('order_items', oi => oi.order_id === o.id)
   }
-  res.json(result)
+  res.json({ orders: result, total, page: p, pageSize: ps })
 })
 
 app.post('/api/orders', auth(), (req, res) => {
@@ -283,6 +305,7 @@ app.post('/api/orders', auth(), (req, res) => {
       })
     }
   })
+  broadcast('order_created', { id: order.id, table: order.table_number, waiter: req.user.name })
   res.json({ id: order.id })
 })
 
@@ -291,9 +314,11 @@ app.put('/api/orders/:id', auth(), (req, res) => {
   if (!tableNumber || !items?.length) return res.status(400).json({ message: '请选择桌号并添加菜品' })
   if (totalAmount === undefined || totalAmount === null) return res.status(400).json({ message: '缺少订单金额' })
   runTransaction(() => {
-    update('orders', req.params.id, {
-      table_number: tableNumber, total_amount: Number(totalAmount), status
-    })
+    const orderFields = {
+      table_number: tableNumber, total_amount: Number(totalAmount)
+    }
+    if (status !== undefined) orderFields.status = status
+    update('orders', req.params.id, orderFields)
     // Replace order items
     removeWhere('order_items', oi => oi.order_id === parseInt(req.params.id))
     for (const item of items) {
@@ -303,6 +328,7 @@ app.put('/api/orders/:id', auth(), (req, res) => {
       })
     }
   })
+  broadcast('order_updated', { id: parseInt(req.params.id), table: tableNumber })
   res.json({ success: true })
 })
 
@@ -316,11 +342,13 @@ app.post('/api/orders/:id/submit', auth(), (req, res) => {
     if (existing) return res.status(409).json({ message: `该桌号已有待结账订单 #${existing.id}` })
   }
   update('orders', req.params.id, { status: 'pending' })
+  broadcast('order_submitted', { id: parseInt(req.params.id), table: order.table_number })
   res.json({ success: true })
 })
 
 app.post('/api/orders/:id/cancel', auth(['admin', 'cashier']), (req, res) => {
   update('orders', req.params.id, { status: 'cancelled' })
+  broadcast('order_cancelled', { id: parseInt(req.params.id) })
   res.json({ success: true })
 })
 
@@ -334,6 +362,7 @@ app.delete('/api/orders/:id', auth(['admin']), (req, res) => {
     removeWhere('order_items', oi => oi.order_id === orderId)
     remove('orders', orderId)
   })
+  broadcast('order_deleted', { id: orderId })
   res.json({ success: true })
 })
 
@@ -369,11 +398,13 @@ app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
     console.error('Print exception:', e.message)
   }
 
+  broadcast('order_checkout', { id: orderId, paymentMethod })
   res.json({ success: true, print: printResult })
 })
 
 app.post('/api/orders/:id/reopen', auth(['admin', 'cashier']), (req, res) => {
   update('orders', req.params.id, { status: 'pending' })
+  broadcast('order_reopened', { id: parseInt(req.params.id) })
   res.json({ success: true })
 })
 
@@ -532,20 +563,6 @@ app.get('/api/reports/waiter-rank', auth(['admin', 'cashier']), (req, res) => {
   res.json(Object.values(map).sort((a, b) => b.revenue - a.revenue))
 })
 
-app.get('/api/orders/export', auth(['admin', 'cashier']), (req, res) => {
-  const { start, end, waiter_id, table } = req.query
-  let result = find('orders', o => o.status === 'completed')
-  if (start) result = result.filter(o => o.paid_at >= start)
-  if (end) result = result.filter(o => o.paid_at <= end + 'T23:59:59')
-  if (waiter_id) result = result.filter(o => o.waiter_id === parseInt(waiter_id))
-  if (table) result = result.filter(o => o.table_number === parseInt(table))
-  result.sort((a, b) => b.paid_at.localeCompare(a.paid_at))
-  for (const o of result) {
-    o.items = find('order_items', oi => oi.order_id === o.id)
-  }
-  res.json(result)
-})
-
 // ── Database Backup / Restore (admin only) ────────────
 
 app.get('/api/db/info', auth(['admin']), (req, res) => {
@@ -596,6 +613,58 @@ app.post('/api/db/restore', auth(['admin']), (req, res) => {
   }
 })
 
+// ── WebSocket Server ──────────────────────────────────
+
+let wss = null
+
+function setupWebSocket(server) {
+  wss = new WebSocket.Server({ server, path: '/ws' })
+  wss.on('connection', (ws, req) => {
+    ws.isAlive = true
+    ws.on('pong', () => { ws.isAlive = true })
+    ws.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw)
+        // Client authentication via WebSocket
+        if (msg.type === 'auth' && msg.token) {
+          try {
+            const payload = jwt.verify(msg.token, JWT_SECRET)
+            ws.userId = payload.id
+            ws.userRole = payload.role
+            ws.isAuthenticated = true
+            ws.send(JSON.stringify({ type: 'auth_ok' }))
+          } catch {
+            ws.send(JSON.stringify({ type: 'auth_error', message: '认证失败' }))
+          }
+        }
+      } catch {}
+    })
+    ws.send(JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() }))
+  })
+
+  // Heartbeat to detect dead connections
+  const heartbeatInterval = setInterval(() => {
+    if (!wss) { clearInterval(heartbeatInterval); return }
+    wss.clients.forEach(ws => {
+      if (!ws.isAlive) return ws.terminate()
+      ws.isAlive = false
+      ws.ping()
+    })
+  }, 30000)
+
+  wss.on('close', () => clearInterval(heartbeatInterval))
+}
+
+function broadcast(event, data) {
+  if (!wss) return
+  const payload = JSON.stringify({ type: event, data, timestamp: new Date().toISOString() })
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN && ws.isAuthenticated) {
+      ws.send(payload)
+    }
+  })
+}
+
 // ── Error Handler ─────────────────────────────────────
 
 app.use((err, req, res, next) => {
@@ -626,7 +695,10 @@ app.get('*', (req, res) => {
 ;(async () => {
   await init()
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = http.createServer(app)
+  setupWebSocket(server)
+
+  server.listen(PORT, '0.0.0.0', () => {
     const lanIp = getLanIp()
     console.log('')
     console.log('  ========================================')
@@ -636,6 +708,7 @@ app.get('*', (req, res) => {
     console.log(`  Local:   http://localhost:${PORT}`)
     console.log(`  Network: http://${lanIp}:${PORT}`)
     console.log(`  API:     http://${lanIp}:${PORT}/api`)
+    console.log(`  WS:      ws://${lanIp}:${PORT}/ws`)
     console.log('')
     console.log('  Press Ctrl+C to stop')
     console.log('')

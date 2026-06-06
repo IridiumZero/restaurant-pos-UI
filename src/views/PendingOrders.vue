@@ -40,6 +40,9 @@
       <div v-if="!loading && !filteredOrders.length" class="empty-hint">
         <el-empty :description="t('admin.pendingEmpty')" :image-size="80" />
       </div>
+      <div class="pagination-wrap" v-if="totalOrders > pageSize">
+        <el-pagination background layout="prev, pager, next" :total="totalOrders" :page-size="pageSize" :current-page="currentPage" @current-change="handlePageChange" />
+      </div>
     </div>
 
     <!-- 结账对话框 -->
@@ -76,11 +79,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { RefreshRight, Delete } from '@element-plus/icons-vue'
 import { useI18n, getDishName } from '../i18n'
 import { api } from '../api'
+import { useWebSocket } from '../ws'
 
 const { t, formatCurrency, locale } = useI18n()
 
@@ -92,11 +96,15 @@ const loading = ref(false), paying = ref(false)
 const allOrders = ref([]), waiterList = ref([]), waiterFilter = ref(null), dishMap = ref({})
 const checkoutVisible = ref(false), currentOrder = ref(null)
 const paymentMethod = ref('cash'), cashReceived = ref(0)
+const currentPage = ref(1), pageSize = ref(20), totalOrders = ref(0)
+
+watch([waiterFilter], () => {
+  currentPage.value = 1
+  loadOrders()
+})
 
 const filteredOrders = computed(() => {
-  let r = allOrders.value.filter(o => o.status === 'pending' || o.status === 'cancelled')
-  if (waiterFilter.value) r = r.filter(o => o.waiter_id === waiterFilter.value)
-  return r
+  return allOrders.value.filter(o => o.status === 'pending' || o.status === 'cancelled')
 })
 
 const canPay = computed(() => paymentMethod.value === 'pos' || cashReceived.value >= (currentOrder.value?.total_amount || 0))
@@ -124,11 +132,19 @@ async function loadDishes() {
 async function loadOrders() {
   loading.value = true
   try {
-    const [orders, waiters] = await Promise.all([api.getOrders(), api.getWaiters(), loadDishes()])
-    allOrders.value = orders
+    const params = { page: currentPage.value, pageSize: pageSize.value }
+    if (waiterFilter.value) params.waiter_id = waiterFilter.value
+    const [res, waiters] = await Promise.all([api.getOrders(params), api.getWaiters(), loadDishes()])
+    allOrders.value = res.orders || res
+    totalOrders.value = res.total ?? allOrders.value.length
     waiterList.value = waiters
-  } catch (e) { ElMessage.error(t('common.loadError', { msg: e.message })) }
-  loading.value = false
+  } catch (e) { console.error('加载订单失败:', e) }
+  finally { loading.value = false }
+}
+
+function handlePageChange(page) {
+  currentPage.value = page
+  loadOrders()
 }
 
 function showCheckout(order) {
@@ -199,6 +215,13 @@ async function handleCheckout() {
   } catch (e) { ElMessage.error(e.message) }
   paying.value = false
 }
+
+// ── WebSocket 实时刷新 ────────────────
+useWebSocket((msg) => {
+  if (msg.type?.startsWith('order_')) {
+    loadOrders()
+  }
+})
 
 onMounted(loadOrders)
 </script>
@@ -478,5 +501,11 @@ onMounted(loadOrders)
 
 .delete-order-btn {
   margin-left: 8px !important;
+}
+
+.pagination-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 16px 0;
 }
 </style>

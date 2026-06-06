@@ -27,10 +27,17 @@
         </template>
       </div>
 
-      <!-- 服务器连接状态（仅在连接失败时显示） -->
+      <!-- 服务器连接状态 -->
       <div v-if="!serverOk" class="server-status err">
         <span class="status-dot" /> {{ t('common.serverError') }} {{ serverUrl }}
         <el-button size="small" text @click="showServerConfig = true" style="margin-left:auto">{{ t('common.edit') }}</el-button>
+      </div>
+      <div v-else-if="offlinePending > 0" class="server-status offline-sync">
+        <span class="status-dot sync" /> {{ offlinePending }} 个离线订单待同步
+        <el-button size="small" text @click="syncOfflineOrders" style="margin-left:auto">立即同步</el-button>
+      </div>
+      <div v-if="wsConnected" class="server-status ws-ok">
+        <span class="status-dot ok" /> 实时连接已建立
       </div>
 
       <div class="category-bar">
@@ -176,6 +183,8 @@ import { ElMessage } from 'element-plus'
 import { Minus, Plus, Delete, UserFilled, ArrowRight, Setting, User, Lock } from '@element-plus/icons-vue'
 import { useI18n, localeOptions, getDishName, getCategoryName, getDishRemark } from '../i18n'
 import { api } from '../api'
+import { cacheMenu, getCachedMenu, queueOrder, syncPendingOrders, getPendingCount } from '../offline'
+import { useWebSocket } from '../ws'
 
 const { t, locale, setLocale, formatCurrency } = useI18n()
 const currentLang = ref(locale.value)
@@ -221,6 +230,53 @@ const currentUser = ref(JSON.parse(localStorage.getItem('waiterUser') || 'null')
 const orderTab = ref('draft')
 const myDrafts = ref([])
 const myPending = ref([])
+
+// ── 离线模式 ──────────────────────────
+const offlinePending = ref(0)
+const isOnline = ref(navigator.onLine)
+
+async function refreshPendingCount() {
+  try { offlinePending.value = await getPendingCount() } catch { offlinePending.value = 0 }
+}
+
+async function syncOfflineOrders() {
+  if (!isOnline.value || !serverOk.value) return
+  try {
+    const results = await syncPendingOrders(api)
+    const ok = results.filter(r => r.success).length
+    const fail = results.filter(r => !r.success).length
+    if (ok) ElMessage.success(`${ok} 个离线订单已同步${fail ? `，${fail} 个失败` : ''}`)
+    await refreshPendingCount()
+    await loadMyOrders()
+  } catch (e) { ElMessage.error('同步失败: ' + e.message) }
+}
+
+// ── WebSocket 实时推送 ────────────────
+const wsConnected = ref(false)
+const { connected: wsConn } = useWebSocket((msg) => {
+  if (msg.type === 'connected') return
+  if (msg.type === 'auth_ok') { wsConnected.value = true; return }
+  // 收到订单相关事件时刷新数据
+  if (msg.type?.startsWith('order_')) {
+    loadMyOrders()
+    loadDishes()
+  }
+})
+watch(wsConn, v => { wsConnected.value = v })
+
+// ── 在线/离线事件 ──────────────────────
+window.addEventListener('online', async () => {
+  isOnline.value = true
+  await checkServer()
+  if (serverOk.value) {
+    await loadDishes()
+    await syncOfflineOrders()
+  }
+})
+window.addEventListener('offline', () => {
+  isOnline.value = false
+  serverOk.value = false
+})
 
 function cartQty(dishId) {
   const item = cart.value.find(i => i.dishId === dishId)
@@ -270,35 +326,51 @@ async function handleWaiterLogin() {
 
 async function saveAsDraft() {
   if (!currentUser.value) { ElMessage.warning(t('order.loginRequired')); return }
+  const orderData = {
+    created_by: currentUser.value.id,
+    status: 'draft',
+    tableNumber: tableNumber.value,
+    totalAmount: totalAmount.value,
+    items: cart.value.map(i => ({ dish_id: i.dishId, qty: i.qty, name: i.name, price: i.price }))
+  }
   try {
-    await api.addOrder({
-      created_by: currentUser.value.id,
-      status: 'draft',
-      tableNumber: tableNumber.value,
-      totalAmount: totalAmount.value,
-      items: cart.value.map(i => ({ dish_id: i.dishId, qty: i.qty, name: i.name, price: i.price }))
-    })
-    ElMessage.success(t('order.draftSaved'))
+    if (!isOnline.value || !serverOk.value) {
+      // 离线：存入 IndexedDB
+      await queueOrder(orderData)
+      ElMessage.success('已保存到离线队列，联网后自动同步')
+      await refreshPendingCount()
+    } else {
+      await api.addOrder(orderData)
+      ElMessage.success(t('order.draftSaved'))
+      await loadMyOrders()
+    }
     cart.value = []
     tableNumber.value = null
-    await loadMyOrders()
   } catch (e) { ElMessage.error(e.message) }
 }
 
 async function submitOrder() {
   if (!currentUser.value) { ElMessage.warning(t('order.loginRequired')); return }
+  const orderData = {
+    created_by: currentUser.value.id,
+    status: 'pending',
+    tableNumber: tableNumber.value,
+    totalAmount: totalAmount.value,
+    items: cart.value.map(i => ({ dish_id: i.dishId, qty: i.qty, name: i.name, price: i.price }))
+  }
   try {
-    await api.addOrder({
-      created_by: currentUser.value.id,
-      status: 'pending',
-      tableNumber: tableNumber.value,
-      totalAmount: totalAmount.value,
-      items: cart.value.map(i => ({ dish_id: i.dishId, qty: i.qty, name: i.name, price: i.price }))
-    })
-    ElMessage.success(t('order.orderSubmitted'))
+    if (!isOnline.value || !serverOk.value) {
+      // 离线：存入 IndexedDB
+      await queueOrder(orderData)
+      ElMessage.success('订单已排队，联网后自动提交')
+      await refreshPendingCount()
+    } else {
+      await api.addOrder(orderData)
+      ElMessage.success(t('order.orderSubmitted'))
+      await loadMyOrders()
+    }
     cart.value = []
     tableNumber.value = null
-    await loadMyOrders()
   } catch (e) { ElMessage.error(e.message) }
 }
 
@@ -337,8 +409,19 @@ async function loadDishes() {
     dishes.value = d
     categoryList.value = cats
     serverOk.value = true
+    // 缓存到 IndexedDB
+    try { await cacheMenu(d, cats) } catch {}
   } catch (e) {
     serverOk.value = false
+    // 离线时尝试从缓存加载
+    try {
+      const cached = await getCachedMenu()
+      if (cached) {
+        dishes.value = cached.dishes
+        categoryList.value = cached.categories
+        ElMessage.info('已加载离线缓存菜单')
+      }
+    } catch {}
     if (e.message) ElMessage.error(e.message)
   } finally { loading.value = false }
 }
@@ -381,12 +464,24 @@ function avatarColor(name) {
 watch(locale, v => { currentLang.value = v })
 
 onMounted(async () => {
+  await refreshPendingCount()
   await checkServer()
   if (serverOk.value) {
+    // 在线：先同步离线队列，再加载菜单
+    if (offlinePending.value > 0) await syncOfflineOrders()
     if (!currentUser.value) showWaiterLogin.value = true
     else await loadDishes()
   } else {
-    showServerConfig.value = true
+    // 离线：尝试从缓存加载菜单
+    try {
+      const cached = await getCachedMenu()
+      if (cached) {
+        dishes.value = cached.dishes
+        categoryList.value = cached.categories
+      }
+    } catch {}
+    if (!currentUser.value) showWaiterLogin.value = true
+    else if (!dishes.value.length) showServerConfig.value = true
   }
 })
 </script>
@@ -514,6 +609,32 @@ onMounted(async () => {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* 离线同步状态栏 */
+.server-status.offline-sync {
+  background: linear-gradient(135deg, rgba(230, 162, 60, 0.15) 0%, rgba(245, 166, 35, 0.15) 100%);
+  color: #e6a23c;
+  border-bottom: 1.5px solid rgba(230, 162, 60, 0.2);
+}
+
+.server-status.offline-sync .status-dot.sync {
+  background: #e6a23c;
+  animation: pulse 1.5s infinite;
+}
+
+.server-status.ws-ok {
+  background: linear-gradient(135deg, rgba(103, 194, 58, 0.12) 0%, rgba(64, 158, 255, 0.12) 100%);
+  color: #67c23a;
+  border-bottom: 1.5px solid rgba(103, 194, 58, 0.2);
+  font-size: 12px;
+  padding: 8px 24px;
+}
+
+.server-status.ws-ok .status-dot.ok {
+  background: #67c23a;
+  width: 6px;
+  height: 6px;
 }
 
 /* ==================== 分类Tab栏 ==================== */

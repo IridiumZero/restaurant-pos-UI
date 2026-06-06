@@ -429,19 +429,20 @@ async function loadDishes() {
 async function loadMyOrders() {
   if (!currentUser.value) return
   try {
-    const orders = await api.getOrdersByWaiter(currentUser.value.id)
-    myDrafts.value = orders.filter(o => o.status === 'draft')
-    myPending.value = orders.filter(o => o.status === 'pending')
+    const res = await api.getOrdersByWaiter(currentUser.value.id)
+    const list = res.orders || res
+    myDrafts.value = list.filter(o => o.status === 'draft')
+    myPending.value = list.filter(o => o.status === 'pending')
   } catch (e) { console.error('加载订单失败:', e) }
 }
 
 async function continueDraft(order) {
   tableNumber.value = order.table_number
-  cart.value = order.items.map(i => ({
+  cart.value = (order.items || []).map(i => ({
     dishId: i.dish_id,
-    name: i.name,
-    price: i.price,
-    qty: i.qty
+    name: i.dish_name || i.name,
+    price: i.dish_price || i.price,
+    qty: i.quantity || i.qty
   }))
   // 删除草稿
   try { await api.cancelOrder(order.id) } catch (e) { console.error('删除草稿失败:', e) }
@@ -932,7 +933,7 @@ onMounted(async () => {
   overflow-y: auto; 
   padding: 12px 24px; 
   -webkit-overflow-scrolling: touch; 
-  max-height: 240px; 
+  max-height: 400px; 
 }
 
 .cart-item { 
@@ -1261,7 +1262,7 @@ onMounted(async () => {
   }
   
   .cart-list { 
-    max-height: 160px; 
+    /* max-height: 160px;  */
   }
   
   .panel-header {

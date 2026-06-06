@@ -36,9 +36,6 @@
         <span class="status-dot sync" /> {{ offlinePending }} 个离线订单待同步
         <el-button size="small" text @click="syncOfflineOrders" style="margin-left:auto">立即同步</el-button>
       </div>
-      <div v-if="wsConnected" class="server-status ws-ok">
-        <span class="status-dot ok" /> 实时连接已建立
-      </div>
 
       <div class="category-bar">
         <el-radio-group v-model="activeCategory" size="large" class="category-tabs">
@@ -253,7 +250,7 @@ async function syncOfflineOrders() {
 
 // ── WebSocket 实时推送 ────────────────
 const wsConnected = ref(false)
-const { connected: wsConn } = useWebSocket((msg) => {
+useWebSocket((msg) => {
   if (msg.type === 'connected') return
   if (msg.type === 'auth_ok') { wsConnected.value = true; return }
   // 收到订单相关事件时刷新数据
@@ -262,7 +259,6 @@ const { connected: wsConn } = useWebSocket((msg) => {
     loadDishes()
   }
 })
-watch(wsConn, v => { wsConnected.value = v })
 
 // ── 在线/离线事件 ──────────────────────
 window.addEventListener('online', async () => {

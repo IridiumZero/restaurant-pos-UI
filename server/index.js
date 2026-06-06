@@ -5,16 +5,32 @@ const express = require('express')
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const os = require('os')
-const { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword } = require('./db')
+const { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction } = require('./db')
 const { generateReceipt, formatReceiptText, printText, listPrinters, PRINTER_NAME } = require('./printer')
 
-const JWT_SECRET = process.env.JWT_SECRET || 'restaurant-pos-secret-change-in-production'
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+  console.warn('  ⚠ JWT_SECRET 未设置，使用随机密钥（重启后 token 将失效）')
+  return crypto.randomBytes(32).toString('hex')
+})()
 const PORT = process.env.PORT || 3000
 
 const app = express()
-app.use(cors())
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true) // 允许无 origin（如 curl、APK）
+    callback(null, true) // 局域网环境允许所有来源
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}))
 app.use(express.json({ limit: '10mb' }))
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')))
+
+// ── Health Check ───────────────────────────────────────
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
 
 // ── Image Upload ───────────────────────────────────────
 
@@ -26,8 +42,32 @@ app.post('/api/upload', auth(['admin', 'cashier', 'waiter']), (req, res) => {
   if (!image || !image.startsWith('data:image/')) return res.status(400).json({ message: 'Invalid image data' })
   const matches = image.match(/^data:image\/(\w+);base64,(.+)$/)
   if (!matches) return res.status(400).json({ message: 'Invalid base64 image' })
-  const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1]
-  const data = Buffer.from(matches[2], 'base64')
+  // H4: 验证 MIME 类型
+  const mime = matches[1].toLowerCase()
+  const allowedMimes = ['png', 'jpg', 'jpeg', 'gif', 'webp']
+  if (!allowedMimes.includes(mime)) return res.status(400).json({ message: '不支持的图片格式，仅允许 png/jpg/gif/webp' })
+  // H4: 限制图片大小为 5MB（base64 编码后约 6.7MB）
+  const base64Data = matches[2]
+  if (base64Data.length > 6700000) return res.status(400).json({ message: '图片大小不能超过 5MB' })
+  const ext = mime === 'jpeg' ? 'jpg' : mime
+  const data = Buffer.from(base64Data, 'base64')
+  // H4: 验证文件头魔术字节
+  const magicBytes = {
+    png: [0x89, 0x50, 0x4E, 0x47],
+    jpg: [0xFF, 0xD8, 0xFF],
+    gif: [0x47, 0x49, 0x46],
+    webp: null // webp 需要特殊处理 RIFF....WEBP
+  }
+  if (ext === 'png' || ext === 'jpg' || ext === 'gif') {
+    const expected = magicBytes[ext]
+    for (let i = 0; i < expected.length; i++) {
+      if (data[i] !== expected[i]) return res.status(400).json({ message: '图片文件内容与格式不匹配' })
+    }
+  } else if (ext === 'webp') {
+    if (data[0] !== 0x52 || data[1] !== 0x49 || data[2] !== 0x46 || data[3] !== 0x46) {
+      return res.status(400).json({ message: '图片文件内容与格式不匹配' })
+    }
+  }
   const bytes = crypto.randomBytes(16)
   bytes[6] = (bytes[6] & 0x0f) | 0x40
   bytes[8] = (bytes[8] & 0x3f) | 0x80
@@ -36,6 +76,12 @@ app.post('/api/upload', auth(['admin', 'cashier', 'waiter']), (req, res) => {
   fs.writeFileSync(path.join(UPLOADS_DIR, filename), data)
   res.json({ path: `/uploads/${filename}` })
 })
+
+// ── Login Rate Limiting ───────────────────────────────
+
+const loginAttempts = new Map()
+const LOGIN_WINDOW_MS = 5 * 60 * 1000 // 5分钟窗口
+const LOGIN_MAX_ATTEMPTS = 10 // 最多10次
 
 // ── Auth Middleware ───────────────────────────────────
 
@@ -65,12 +111,25 @@ function auth(roles) {
 // ── Auth ──────────────────────────────────────────────
 
 app.post('/api/auth/login', (req, res) => {
+  // H2: 速率限制检查
+  const ip = req.ip || req.connection.remoteAddress
+  const now = Date.now()
+  const attempts = loginAttempts.get(ip) || []
+  const recentAttempts = attempts.filter(t => now - t < LOGIN_WINDOW_MS)
+  if (recentAttempts.length >= LOGIN_MAX_ATTEMPTS) {
+    return res.status(429).json({ message: '登录尝试次数过多，请5分钟后再试' })
+  }
+  loginAttempts.set(ip, [...recentAttempts, now])
+
   const employeeNo = req.body.employeeNo || req.body.username
   const { password } = req.body
   if (!employeeNo || !password) return res.status(400).json({ message: '请输入工号和密码' })
 
-  const emp = findOne('employees', e => e.username === employeeNo && e.password === hashPassword(password) && e.status === 'active')
-  if (!emp) return res.status(401).json({ message: '工号或密码错误' })
+  const emp = findOne('employees', e => e.username === employeeNo && e.status === 'active')
+  if (!emp || !verifyPassword(password, emp.password)) return res.status(401).json({ message: '工号或密码错误' })
+
+  // 登录成功，清除该 IP 的计数
+  loginAttempts.delete(ip)
 
   // Invalidate previous sessions: increment token_version so old tokens are rejected
   const newVersion = (emp.token_version || 0) + 1
@@ -87,7 +146,7 @@ app.get('/api/auth/me', auth(), (req, res) => res.json(req.user))
 app.get('/api/dishes', auth(), (req, res) => {
   const { category, status, search } = req.query
   let result = find('dishes', () => true)
-  if (category) result = result.filter(d => d.category === category)
+  if (category) result = result.filter(d => (d.category || '').split(/[,，]/).map(c => c.trim()).includes(category))
   if (status) result = result.filter(d => d.status === status)
   if (search) {
     const q = search.toLowerCase()
@@ -165,8 +224,11 @@ app.put('/api/categories/:id', auth(['admin', 'cashier']), (req, res) => {
   if (sort_order !== undefined) fields.sort_order = sort_order
   // If renaming, sync dish categories
   if (name !== undefined && name.trim() !== cat.name) {
-    const dishes = find('dishes', d => d.category === cat.name)
-    for (const d of dishes) update('dishes', d.id, { category: name.trim() })
+    const dishes = find('dishes', d => (d.category || '').split(/[,，]/).map(c => c.trim()).includes(cat.name))
+    for (const d of dishes) {
+      const newCats = d.category.split(/[,，]/).map(c => c.trim() === cat.name ? name.trim() : c.trim()).join(',')
+      update('dishes', d.id, { category: newCats })
+    }
   }
   if (Object.keys(fields).length) update('categories', req.params.id, fields)
   res.json({ success: true })
@@ -206,44 +268,72 @@ app.post('/api/orders', auth(), (req, res) => {
     if (existing) return res.status(409).json({ message: `该桌号已有待结账订单 #${existing.id}，请先结账后再下单` })
   }
 
-  const order = insert('orders', {
-    table_number: tableNumber, waiter_id: req.user.id, waiter_name: req.user.name,
-    total_amount: Number(totalAmount), status: status || 'pending',
-    payment_method: null, cash_received: null, change_amount: null,
-    cashier_id: null, created_at: new Date().toISOString(), paid_at: null
-  })
-  for (const item of items) {
-    insert('order_items', {
-      order_id: order.id, dish_id: item.dishId, dish_name: item.name,
-      dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty
+  let order
+  runTransaction(() => {
+    order = insert('orders', {
+      table_number: tableNumber, waiter_id: req.user.id, waiter_name: req.user.name,
+      total_amount: Number(totalAmount), status: status || 'pending',
+      payment_method: null, cash_received: null, change_amount: null,
+      cashier_id: null, created_at: new Date().toISOString(), paid_at: null
     })
-  }
+    for (const item of items) {
+      insert('order_items', {
+        order_id: order.id, dish_id: item.dish_id || item.dishId, dish_name: item.name,
+        dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty
+      })
+    }
+  })
   res.json({ id: order.id })
 })
 
 app.put('/api/orders/:id', auth(), (req, res) => {
   const { tableNumber, items, totalAmount, status } = req.body
-  update('orders', req.params.id, {
-    table_number: tableNumber, total_amount: Number(totalAmount), status
-  })
-  // Replace order items
-  removeWhere('order_items', oi => oi.order_id === parseInt(req.params.id))
-  for (const item of items) {
-    insert('order_items', {
-      order_id: parseInt(req.params.id), dish_id: item.dishId, dish_name: item.name,
-      dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty
+  if (!tableNumber || !items?.length) return res.status(400).json({ message: '请选择桌号并添加菜品' })
+  if (totalAmount === undefined || totalAmount === null) return res.status(400).json({ message: '缺少订单金额' })
+  runTransaction(() => {
+    update('orders', req.params.id, {
+      table_number: tableNumber, total_amount: Number(totalAmount), status
     })
-  }
+    // Replace order items
+    removeWhere('order_items', oi => oi.order_id === parseInt(req.params.id))
+    for (const item of items) {
+      insert('order_items', {
+        order_id: parseInt(req.params.id), dish_id: item.dish_id || item.dishId, dish_name: item.name,
+        dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty
+      })
+    }
+  })
   res.json({ success: true })
 })
 
 app.post('/api/orders/:id/submit', auth(), (req, res) => {
+  const order = findOne('orders', o => o.id === parseInt(req.params.id))
+  if (!order) return res.status(404).json({ message: '订单不存在' })
+  if (order.status !== 'draft') return res.status(400).json({ message: '只能提交草稿订单' })
+  // 检查桌号冲突
+  if (order.table_number) {
+    const existing = findOne('orders', o => o.table_number === order.table_number && o.status === 'pending' && o.id !== order.id)
+    if (existing) return res.status(409).json({ message: `该桌号已有待结账订单 #${existing.id}` })
+  }
   update('orders', req.params.id, { status: 'pending' })
   res.json({ success: true })
 })
 
 app.post('/api/orders/:id/cancel', auth(['admin', 'cashier']), (req, res) => {
   update('orders', req.params.id, { status: 'cancelled' })
+  res.json({ success: true })
+})
+
+// Delete order (admin only)
+app.delete('/api/orders/:id', auth(['admin']), (req, res) => {
+  const orderId = parseInt(req.params.id)
+  if (isNaN(orderId)) return res.status(400).json({ message: '无效的订单ID' })
+  const order = findOne('orders', o => o.id === orderId)
+  if (!order) return res.status(404).json({ message: '订单不存在' })
+  runTransaction(() => {
+    removeWhere('order_items', oi => oi.order_id === orderId)
+    remove('orders', orderId)
+  })
   res.json({ success: true })
 })
 
@@ -318,7 +408,7 @@ app.get('/api/printers', auth(['admin', 'cashier']), (req, res) => {
 // ── Employees ─────────────────────────────────────────
 
 app.get('/api/employees', auth(['admin', 'cashier']), (req, res) => {
-  const rows = find('employees', () => true).map(e => ({ id: e.id, username: e.username, name: e.name, role: e.role, status: e.status, password: e.password, created_at: e.created_at }))
+  const rows = find('employees', () => true).map(e => ({ id: e.id, username: e.username, name: e.name, role: e.role, status: e.status, created_at: e.created_at }))
   rows.sort((a, b) => a.id - b.id)
   res.json(rows)
 })
@@ -336,8 +426,17 @@ app.post('/api/employees', auth(['admin']), (req, res) => {
 
 app.put('/api/employees/:id', auth(['admin']), (req, res) => {
   const { name, role, status, password: plainPwd } = req.body
-  const fields = { name, role, status }
-  if (plainPwd) fields.password = hashPassword(plainPwd)
+  const fields = {}
+  if (name !== undefined) fields.name = name
+  if (role !== undefined) fields.role = role
+  if (status !== undefined) fields.status = status
+  if (plainPwd) {
+    fields.password = hashPassword(plainPwd)
+    // 修改密码时递增 token_version，使该员工当前会话立即失效
+    const emp = findOne('employees', e => e.id === parseInt(req.params.id))
+    if (emp) fields.token_version = (emp.token_version || 0) + 1
+  }
+  if (Object.keys(fields).length === 0) return res.status(400).json({ message: '没有需要更新的字段' })
   update('employees', req.params.id, fields)
   res.json({ success: true })
 })
@@ -493,14 +592,14 @@ app.post('/api/db/restore', auth(['admin']), (req, res) => {
     fs.copyFileSync(bakPath, dbPath)
     res.json({ message: '已从备份恢复，请重启服务以加载数据' })
   } catch (e) {
-    res.status(500).json({ message: '恢复失败: ' + e.message })
+    res.status(500).json({ message: '恢复失败，请检查备份文件是否完整' })
   }
 })
 
 // ── Error Handler ─────────────────────────────────────
 
 app.use((err, req, res, next) => {
-  console.error(err)
+  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message)
   res.status(500).json({ message: '服务器内部错误' })
 })
 

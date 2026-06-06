@@ -20,6 +20,13 @@ const elLocales = {
 
 const app = createApp(App)
 
+// Global error handler
+app.config.errorHandler = (err, instance, info) => {
+  console.error('Vue Error:', err)
+  console.error('Component:', instance)
+  console.error('Info:', info)
+}
+
 // Use stored locale for Element Plus initial language
 const storedLang = localStorage.getItem('lang') || 'zh'
 app.use(ElementPlus, { locale: elLocales[storedLang] || zhCn })

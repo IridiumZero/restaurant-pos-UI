@@ -40,6 +40,7 @@ export default {
     required: 'Required',
     server: 'Server',
     serverUrl: 'Server URL',
+    serverError: 'Server connection failed:',
     loadError: 'Failed to load: {msg}',
     dbInfo: 'Database Info',
     dbSize: 'DB Size',
@@ -50,6 +51,7 @@ export default {
     restoreConfirm: 'Confirm restore? Current data will be overwritten.',
     restoreSuccess: 'Restored from backup. Please restart the server.',
     noBackup: 'No backup file',
+    serverUrlRequired: 'Please enter server address',
   },
 
   currency: {
@@ -113,6 +115,8 @@ export default {
     orderSubmitted: 'Submitted',
     totalAmount: 'Total Amount',
     waiterRequired: 'Please login with a waiter account',
+    loginSuccess: 'Login successful',
+    loginRequired: 'Please log in with waiter account first',
     tableConflict: 'This table already has a pending order. Please complete payment first.',
   },
 
@@ -145,6 +149,9 @@ export default {
     cancelSuccess: 'Order cancelled',
     reopenOrder: 'Reopen Order',
     reopenSuccess: 'Order reopened',
+    deleteOrder: 'Delete Order',
+    deleteOrderConfirm: 'Confirm permanently delete this order? This action cannot be undone.',
+    deleteSuccess: 'Order deleted',
   },
 
   menu: {

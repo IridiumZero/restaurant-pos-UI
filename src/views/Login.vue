@@ -52,7 +52,7 @@ const formRef = ref(null)
 const loading = ref(false)
 const serverUrl = ref(localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000')
 
-const form = reactive({ employeeNo: 'admin', password: '123456' })
+const form = reactive({ employeeNo: '', password: '' })
 const rules = {
   employeeNo: [{ required: true, message: t('common.required'), trigger: 'blur' }],
   password: [{ required: true, message: t('common.required'), trigger: 'blur' }],

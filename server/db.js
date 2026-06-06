@@ -1,7 +1,7 @@
 const initSqlJs = require('sql.js')
 const fs = require('fs')
 const path = require('path')
-const crypto = require('crypto')
+const bcrypt = require('bcryptjs')
 
 const DB_PATH = path.join(__dirname, 'data.sqlite')
 const JSON_PATH = path.join(__dirname, 'data.json')
@@ -311,7 +311,11 @@ function _count(table) {
 
 // ── Persistence ──────────────────────────────────────
 
+let _persistTimer = null
+const PERSIST_DEBOUNCE_MS = 200
+
 function persist() {
+  // 立即写入数据库文件（保证数据安全）
   const buffer = _db.export()
   const tmpPath = DB_PATH + '.tmp'
   fs.writeFileSync(tmpPath, Buffer.from(buffer))
@@ -319,8 +323,12 @@ function persist() {
     try { fs.copyFileSync(DB_PATH, BAK_PATH) } catch {}
   }
   fs.renameSync(tmpPath, DB_PATH)
-  // Also save a timestamped backup
-  _saveTimestampedBackup()
+  // 时间戳备份改为防抖（避免连续 insert 产生大量备份）
+  if (_persistTimer) clearTimeout(_persistTimer)
+  _persistTimer = setTimeout(() => {
+    _saveTimestampedBackup()
+    _persistTimer = null
+  }, PERSIST_DEBOUNCE_MS)
 }
 
 function _saveTimestampedBackup() {
@@ -380,7 +388,7 @@ function insert(table, record) {
   _db.run(`INSERT INTO ${table} (${keys.join(',')}) VALUES (${placeholders})`, keys.map(k => record[k]))
   const r = _db.exec('SELECT last_insert_rowid()')
   const id = r[0].values[0][0]
-  persist()
+  if (!_inTransaction) persist()
   return { ...record, id }
 }
 
@@ -390,14 +398,14 @@ function update(table, id, fields) {
   const values = keys.map(k => fields[k])
   _db.run(`UPDATE ${table} SET ${sets} WHERE id = ?`, [...values, parseInt(id)])
   const changed = _db.getRowsModified()
-  persist()
+  if (!_inTransaction) persist()
   return changed > 0
 }
 
 function remove(table, id) {
   _db.run(`DELETE FROM ${table} WHERE id = ?`, [parseInt(id)])
   const changed = _db.getRowsModified()
-  persist()
+  if (!_inTransaction) persist()
   return changed > 0
 }
 
@@ -406,12 +414,35 @@ function removeWhere(table, predicate) {
   for (const row of rows) {
     _db.run(`DELETE FROM ${table} WHERE id = ?`, [row.id])
   }
-  if (rows.length) persist()
+  if (rows.length && !_inTransaction) persist()
   return rows.length
 }
 
 function hashPassword(pw) {
-  return crypto.createHash('sha256').update(pw).digest('hex')
+  return bcrypt.hashSync(pw, 10)
 }
 
-module.exports = { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword }
+function verifyPassword(pw, hash) {
+  return bcrypt.compareSync(pw, hash)
+}
+
+// ── Transaction ──────────────────────────────────────
+
+let _inTransaction = false
+
+function runTransaction(fn) {
+  _inTransaction = true
+  _db.run('BEGIN TRANSACTION')
+  try {
+    fn()
+    _db.run('COMMIT')
+    persist()
+  } catch (e) {
+    try { _db.run('ROLLBACK') } catch {}
+    throw e
+  } finally {
+    _inTransaction = false
+  }
+}
+
+module.exports = { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction }

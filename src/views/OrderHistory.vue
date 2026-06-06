@@ -31,6 +31,7 @@
         <div class="order-card-bottom">
           <span class="order-time">{{ formatTime(order.created_at) }}</span>
           <span v-if="order.payment_method === '现金'" class="order-cash-detail">{{ t('admin.cashReceived') }} {{ formatCurrency(order.cash_received) }} / {{ t('admin.change') }} {{ formatCurrency(order.change_amount) }}</span>
+          <el-button v-if="isAdmin" type="danger" size="small" :icon="Delete" circle plain @click="handleDelete(order)" class="delete-order-btn" />
         </div>
       </div>
       <div v-if="!loading && !filteredOrders.length" class="empty-hint">{{ t('history.noOrders') }}</div>
@@ -42,8 +43,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { useI18n, getDishName } from '../i18n'
 import { api } from '../api'
+import { Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const { t, formatCurrency } = useI18n()
+
+const isAdmin = computed(() => {
+  try { return JSON.parse(localStorage.getItem('user') || '{}').role === 'admin' } catch { return false }
+})
 const allOrders = ref([]), waiterList = ref([]), dateRange = ref([]), paymentFilter = ref(''), waiterFilter = ref(null), loading = ref(false), dishMap = ref({})
 
 const filteredOrders = computed(() => {
@@ -74,7 +81,7 @@ async function loadDishes() {
     const list = await api.getDishes()
     dishMap.value = {}
     list.forEach(d => { dishMap.value[d.id] = d })
-  } catch {}
+  } catch (e) { console.error('加载菜品失败:', e) }
 }
 
 async function loadOrders() {
@@ -83,8 +90,26 @@ async function loadOrders() {
     const [orders, waiters] = await Promise.all([api.getOrders({ status: 'completed' }), api.getWaiters(), loadDishes()])
     allOrders.value = orders
     waiterList.value = waiters
-  } catch {}
+  } catch (e) { console.error('加载订单失败:', e) }
   loading.value = false
+}
+
+async function handleDelete(order) {
+  try {
+    await ElMessageBox.confirm(t('admin.deleteOrderConfirm'), t('admin.deleteOrder'), {
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning'
+    })
+    await api.deleteOrder(order.id)
+    ElMessage.success(t('admin.deleteSuccess'))
+    await loadOrders()
+  } catch (e) {
+    if (e !== 'cancel' && e?.message !== 'cancel') {
+      console.error('删除订单失败:', e)
+      if (e.message) ElMessage.error(e.message)
+    }
+  }
 }
 
 onMounted(loadOrders)
@@ -109,4 +134,5 @@ onMounted(loadOrders)
 .order-card-bottom { display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#909399; }
 .order-cash-detail { color:#67c23a; }
 .empty-hint { text-align:center; color:#c0c4cc; padding:40px 0; font-size:14px; }
+.delete-order-btn { margin-left: auto !important; }
 </style>

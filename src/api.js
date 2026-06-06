@@ -1,4 +1,16 @@
-const BASE_URL = () => localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000'
+const BASE_URL = () => {
+  const saved = localStorage.getItem('serverUrl')
+  if (saved) return saved
+  
+  // 在开发环境中，如果是localhost:5173/5174等，默认使用localhost:3000
+  const origin = location.origin
+  if (origin.includes('localhost:') || origin.includes('127.0.0.1:')) {
+    return 'http://localhost:3000'
+  }
+  
+  return origin || 'http://localhost:3000'
+}
+const REQUEST_TIMEOUT = 30000 // 30 seconds
 
 async function request(method, path, body, isPublic) {
   const headers = { 'Content-Type': 'application/json' }
@@ -7,32 +19,49 @@ async function request(method, path, body, isPublic) {
     if (token) headers['Authorization'] = `Bearer ${token}`
   }
 
-  const res = await fetch(`${BASE_URL()}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
 
-  const data = await res.json().catch(() => ({ message: res.statusText }))
-  if (!res.ok) {
-    if (res.status === 401 && !isPublic) {
-      // Token expired or invalidated by another login
-      localStorage.removeItem('token')
-      localStorage.removeItem('isLoggedIn')
-      localStorage.removeItem('user')
-      // Save kick-out message for the next page to show
-      if (data.message) sessionStorage.setItem('kickedOutMsg', data.message)
-      // Redirect management pages to login
-      if (window.location.hash.startsWith('#/admin')) {
-        window.location.hash = '#/login'
+  try {
+    const res = await fetch(`${BASE_URL()}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    const data = await res.json().catch(() => ({ message: res.statusText }))
+    if (!res.ok) {
+      if (res.status === 401 && !isPublic) {
+        // Token expired or invalidated by another login
+        localStorage.removeItem('token')
+        localStorage.removeItem('isLoggedIn')
+        localStorage.removeItem('user')
+        // Save kick-out message for the next page to show
+        if (data.message) sessionStorage.setItem('kickedOutMsg', data.message)
+        // Redirect management pages to login
+        if (window.location.hash.startsWith('#/admin')) {
+          window.location.hash = '#/login'
+        }
       }
+      throw new Error(data.message || `HTTP ${res.status}`)
     }
-    throw new Error(data.message || `HTTP ${res.status}`)
+    return data
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') {
+      throw new Error('请求超时，请检查网络连接')
+    }
+    throw error
   }
-  return data
 }
 
 export const api = {
+  // ── Health Check ──────────────────────
+  ping() { return request('GET', '/api/health', null, true) },
+
   // ── Upload ───────────────────────────
   uploadImage(base64) { return request('POST', '/api/upload', { image: base64 }) },
 
@@ -65,6 +94,7 @@ export const api = {
   updateOrder(id, data) { return request('PUT', `/api/orders/${id}`, data) },
   submitOrder(id) { return request('POST', `/api/orders/${id}/submit`) },
   cancelOrder(id) { return request('POST', `/api/orders/${id}/cancel`) },
+  deleteOrder(id) { return request('DELETE', `/api/orders/${id}`) },
   checkoutOrder(id, data) { return request('POST', `/api/orders/${id}/checkout`, data) },
   reopenOrder(id) { return request('POST', `/api/orders/${id}/reopen`) },
   printOrder(id, lang) { return request('POST', `/api/orders/${id}/print${lang ? '?lang=' + lang : ''}`) },
@@ -77,6 +107,9 @@ export const api = {
 
   // ── Waiters (tablet) ─────────────────
   getWaiters() { return request('GET', '/api/waiters') },
+  getOrdersByWaiter(waiterId) {
+    return request('GET', `/api/orders?waiter_id=${waiterId}`)
+  },
 
   // ── Reports ───────────────────────────
   getTodayReport() { return request('GET', '/api/reports/today') },

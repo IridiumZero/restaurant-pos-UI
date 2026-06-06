@@ -8,3 +8,29 @@ android/build/
 android/capacitor-cordova-android-plugins/
 android/local.properties
 downloads/
+
+# Server
+server/node_modules/
+server/data.sqlite
+server/data.sqlite.bak
+server/data.sqlite.before_restore
+server/backups/
+server/uploads/
+server/.env
+server/*.log
+
+# IDE
+.vscode/
+.idea/
+.claude/settings.local.json
+
+# OS
+Thumbs.db
+
+# Test & temp files
+test-*.png
+server/add-test-dishes.js
+server/check-db.js
+server/reset-db.js
+server/data.sqlite.backup_*
+design-mockups/

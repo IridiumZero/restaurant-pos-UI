@@ -3,7 +3,697 @@
   padding: 0;
   box-sizing: border-box;
 }
+
 html, body, #app {
   height: 100%;
   font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+}
+
+/* ========================================
+   Global Button Styles Optimization
+   ======================================== */
+
+/* Base button enhancements */
+.el-button {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.3px !important;
+  border-radius: 8px !important;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ripple effect on click */
+.el-button::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.el-button:active::after {
+  width: 300px;
+  height: 300px;
+}
+
+/* Primary button - Gradient purple */
+.el-button--primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
+}
+
+.el-button--primary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5) !important;
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%) !important;
+}
+
+.el-button--primary:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4) !important;
+}
+
+.el-button--primary.is-disabled,
+.el-button--primary.is-disabled:hover,
+.el-button--primary.is-disabled:active {
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2) !important;
+}
+
+/* Success button - Gradient green */
+.el-button--success {
+  background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(86, 171, 47, 0.3) !important;
+}
+
+.el-button--success:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(86, 171, 47, 0.5) !important;
+  background: linear-gradient(135deg, #a8e063 0%, #56ab2f 100%) !important;
+}
+
+.el-button--success:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(86, 171, 47, 0.4) !important;
+}
+
+/* Warning button - Gradient orange */
+.el-button--warning {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(245, 87, 108, 0.3) !important;
+}
+
+.el-button--warning:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(245, 87, 108, 0.5) !important;
+  background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%) !important;
+}
+
+.el-button--warning:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(245, 87, 108, 0.4) !important;
+}
+
+/* Danger button - Gradient red */
+.el-button--danger {
+  background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(255, 65, 108, 0.3) !important;
+}
+
+.el-button--danger:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(255, 65, 108, 0.5) !important;
+  background: linear-gradient(135deg, #ff4b2b 0%, #ff416c 100%) !important;
+}
+
+.el-button--danger:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(255, 65, 108, 0.4) !important;
+}
+
+.el-button--danger.is-disabled,
+.el-button--danger.is-disabled:hover,
+.el-button--danger.is-disabled:active {
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: 0 2px 8px rgba(255, 65, 108, 0.2) !important;
+}
+
+/* Info button - Gradient blue */
+.el-button--info {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(79, 172, 254, 0.3) !important;
+}
+
+.el-button--info:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px rgba(79, 172, 254, 0.5) !important;
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%) !important;
+}
+
+.el-button--info:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(79, 172, 254, 0.4) !important;
+}
+
+/* Plain/Default button */
+.el-button--default {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid #dcdfe6 !important;
+  color: #606266 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08) !important;
+}
+
+.el-button--default:hover {
+  transform: translateY(-2px) !important;
+  border-color: #667eea !important;
+  color: #667eea !important;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2) !important;
+  background: rgba(255, 255, 255, 1) !important;
+}
+
+.el-button--default:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Text button */
+.el-button--text {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: #667eea !important;
+}
+
+.el-button--text:hover {
+  color: #764ba2 !important;
+  background: rgba(102, 126, 234, 0.1) !important;
+  transform: scale(1.05) !important;
+}
+
+.el-button--text:active {
+  transform: scale(0.98) !important;
+}
+
+/* Plain variant for colored buttons */
+.el-button--primary.is-plain {
+  background: rgba(102, 126, 234, 0.1) !important;
+  border: 1px solid #667eea !important;
+  color: #667eea !important;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15) !important;
+}
+
+.el-button--primary.is-plain:hover {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4) !important;
+}
+
+.el-button--success.is-plain {
+  background: rgba(86, 171, 47, 0.1) !important;
+  border: 1px solid #56ab2f !important;
+  color: #56ab2f !important;
+  box-shadow: 0 2px 8px rgba(86, 171, 47, 0.15) !important;
+}
+
+.el-button--success.is-plain:hover {
+  background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 12px rgba(86, 171, 47, 0.4) !important;
+}
+
+.el-button--danger.is-plain {
+  background: rgba(255, 65, 108, 0.1) !important;
+  border: 1px solid #ff416c !important;
+  color: #ff416c !important;
+  box-shadow: 0 2px 8px rgba(255, 65, 108, 0.15) !important;
+}
+
+.el-button--danger.is-plain:hover {
+  background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  box-shadow: 0 4px 12px rgba(255, 65, 108, 0.4) !important;
+}
+
+/* Circle button enhancements */
+.el-button.is-circle {
+  border-radius: 50% !important;
+  width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.el-button.is-circle:hover {
+  transform: scale(1.1) rotate(5deg) !important;
+}
+
+/* Button sizes */
+.el-button--large {
+  padding: 12px 24px !important;
+  font-size: 15px !important;
+}
+
+.el-button--small {
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+}
+
+/* Icon spacing */
+.el-button .el-icon {
+  margin-right: 6px;
+  transition: transform 0.3s ease;
+}
+
+.el-button:hover .el-icon {
+  transform: scale(1.1);
+}
+
+/* Loading state */
+.el-button.is-loading {
+  opacity: 0.8;
+  cursor: wait;
+}
+
+.el-button.is-loading .el-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Button group */
+.el-button-group .el-button {
+  border-radius: 0 !important;
+}
+
+.el-button-group .el-button:first-child {
+  border-radius: 8px 0 0 8px !important;
+}
+
+.el-button-group .el-button:last-child {
+  border-radius: 0 8px 8px 0 !important;
+}
+
+/* Special button effects */
+.el-button--primary:not(.is-disabled):hover {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.6);
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .el-button--large {
+    padding: 10px 20px !important;
+    font-size: 14px !important;
+  }
+  
+  .el-button--small {
+    padding: 5px 10px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* ========================================
+   Global Input Styles Optimization
+   ======================================== */
+
+/* Base input styling */
+.el-input__wrapper {
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid #dcdfe6 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  padding: 8px 12px !important;
+}
+
+/* Input hover state */
+.el-input__wrapper:hover {
+  border-color: #c0c4cc !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Input focus state */
+.el-input__wrapper.is-focus {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15), 0 4px 12px rgba(102, 126, 234, 0.2) !important;
+  background-color: #ffffff !important;
+}
+
+.el-input__inner {
+  font-size: 14px !important;
+  color: #303133 !important;
+  height: auto !important;
+  line-height: 1.5 !important;
+}
+
+.el-input__inner::placeholder {
+  color: #a8abb2 !important;
+  font-weight: 400 !important;
+}
+
+/* Input with prefix/suffix icons */
+.el-input__prefix,
+.el-input__suffix {
+  color: #909399 !important;
+  transition: color 0.3s ease !important;
+}
+
+.el-input__wrapper.is-focus .el-input__prefix,
+.el-input__wrapper.is-focus .el-input__suffix {
+  color: #667eea !important;
+}
+
+/* Textarea styling */
+.el-textarea__inner {
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid #dcdfe6 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  padding: 10px 12px !important;
+  font-size: 14px !important;
+}
+
+.el-textarea__inner:hover {
+  border-color: #c0c4cc !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+.el-textarea__inner:focus {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15), 0 4px 12px rgba(102, 126, 234, 0.2) !important;
+  background-color: #ffffff !important;
+}
+
+/* Select styling */
+.el-select .el-input__wrapper {
+  cursor: pointer !important;
+}
+
+/* Select text vertical centering - more specific and safe */
+.el-select .el-input__wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.el-select .el-input__inner {
+  height: auto !important;
+  line-height: inherit !important;
+}
+
+.el-select-dropdown {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+  border: 1px solid #e4e7ed !important;
+  overflow: hidden !important;
+}
+
+.el-select-dropdown__item {
+  transition: all 0.2s ease !important;
+  border-radius: 4px !important;
+  margin: 2px 8px !important;
+  padding: 8px 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  height: 36px !important;
+  box-sizing: border-box !important;
+}
+
+.el-select-dropdown__item:hover {
+  background-color: rgba(102, 126, 234, 0.1) !important;
+  color: #667eea !important;
+}
+
+.el-select-dropdown__item.is-selected {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.15) 0%, rgba(118, 75, 162, 0.15) 100%) !important;
+  color: #667eea !important;
+  font-weight: 600 !important;
+}
+
+/* Number input styling */
+.el-input-number {
+  border-radius: 8px !important;
+}
+
+.el-input-number .el-input__wrapper {
+  border-radius: 8px !important;
+}
+
+.el-input-number__decrease,
+.el-input-number__increase {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  transition: all 0.3s ease !important;
+  font-weight: 600 !important;
+}
+
+.el-input-number__decrease:hover,
+.el-input-number__increase:hover {
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%) !important;
+  transform: scale(1.05) !important;
+}
+
+.el-input-number__decrease:active,
+.el-input-number__increase:active {
+  transform: scale(0.95) !important;
+}
+
+.el-input-number.is-disabled .el-input-number__decrease,
+.el-input-number.is-disabled .el-input-number__increase {
+  background: #c0c4cc !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+/* Form item label styling */
+.el-form-item__label {
+  font-weight: 500 !important;
+  color: #606266 !important;
+  font-size: 14px !important;
+  letter-spacing: 0.3px !important;
+}
+
+.el-form-item__label::before {
+  color: #f56c6c !important;
+  font-weight: 600 !important;
+}
+
+/* ================================================
+   Global Dialog Styles — 统一弹窗标题渐变样式
+   ================================================ */
+
+/* Dialog container — 圆角 + 阴影 */
+.el-overlay .el-dialog {
+  border-radius: 14px !important;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.2) !important;
+  overflow: hidden !important;
+}
+
+/* Dialog header — 蓝紫渐变背景 */
+.el-overlay .el-dialog__header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  padding: 18px 24px !important;
+  margin: 0 !important;
+  border-radius: 14px 14px 0 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+/* Dialog title — 白色粗体 */
+.el-overlay .el-dialog__title {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 17px !important;
+  letter-spacing: 0.5px !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+}
+
+/* Close button — 与标题同行对齐 */
+.el-overlay .el-dialog__headerbtn {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  margin-left: auto !important;
+  padding: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+}
+
+.el-overlay .el-dialog__headerbtn .el-dialog__close {
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-size: 20px !important;
+  transition: all 0.3s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.el-overlay .el-dialog__headerbtn:hover .el-dialog__close {
+  color: #ffffff !important;
+  transform: rotate(90deg) !important;
+}
+
+/* Dialog body */
+.el-overlay .el-dialog__body {
+  padding: 20px !important;
+  background: #f8f9fc !important;
+}
+
+/* Dialog footer */
+.el-overlay .el-dialog__footer {
+  padding: 16px 24px !important;
+  background: #ffffff !important;
+  border-top: 1px solid #e2e8f0 !important;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px !important;
+}
+
+/* Card styling for dialogs */
+.el-overlay .el-dialog .el-form {
+  background: #ffffff !important;
+  padding: 20px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* ================================================
+   MessageBox Styles — 确认弹窗统一样式
+   ================================================ */
+
+/* MessageBox container */
+.el-overlay .el-message-box {
+  border-radius: 14px !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+  overflow: hidden !important;
+}
+
+.el-overlay .el-message-box__header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  padding: 16px 20px !important;
+  border-radius: 14px 14px 0 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.el-overlay .el-message-box__title {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 16px !important;
+}
+
+.el-overlay .el-message-box__headerbtn {
+  position: static !important;
+  margin-left: auto !important;
+  width: 28px !important;
+  height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.el-overlay .el-message-box__headerbtn .el-message-box__close {
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-size: 18px !important;
+  transition: all 0.3s ease !important;
+}
+
+.el-overlay .el-message-box__headerbtn:hover .el-message-box__close {
+  color: #ffffff !important;
+  transform: rotate(90deg) !important;
+}
+
+/* MessageBox body — 加大内边距，不再拥挤 */
+.el-overlay .el-message-box__content {
+  padding: 28px 24px 20px !important;
+}
+
+.el-overlay .el-message-box__message {
+  font-size: 15px !important;
+  line-height: 1.6 !important;
+  color: #303133 !important;
+}
+
+.el-overlay .el-message-box__status {
+  font-size: 26px !important;
+  margin-right: 12px !important;
+}
+
+/* MessageBox footer — 按钮区间距优化 */
+.el-overlay .el-message-box__btns {
+  padding: 12px 24px 20px !important;
+  gap: 12px !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+}
+
+.el-overlay .el-message-box__btns .el-button {
+  min-width: 80px !important;
+}
+
+/* Loading overlay styling */
+.el-loading-mask {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+.el-loading-spinner .circular {
+  width: 50px !important;
+  height: 50px !important;
+}
+
+.el-loading-spinner .path {
+  stroke: #667eea !important;
+  stroke-width: 3 !important;
+}
+
+/* Tooltip styling */
+.el-tooltip__popper {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Responsive adjustments for inputs */
+@media (max-width: 768px) {
+  .el-input__wrapper {
+    padding: 6px 10px !important;
+  }
+  
+  .el-input__inner {
+    font-size: 13px !important;
+  }
+  
+  .el-textarea__inner {
+    padding: 8px 10px !important;
+    font-size: 13px !important;
+  }
+  
+  .el-overlay .el-dialog__body {
+    padding: 16px !important;
+  }
+  
+  .el-overlay .el-dialog .el-form {
+    padding: 16px !important;
+  }
 }

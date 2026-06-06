@@ -40,6 +40,7 @@ export default {
     required: 'Campo obrigatório',
     server: 'Servidor',
     serverUrl: 'URL do Servidor',
+    serverError: 'Falha na conexão com o servidor:',
     loadError: 'Falha ao carregar: {msg}',
     dbInfo: 'Informação da Base de Dados',
     dbSize: 'Tamanho da BD',
@@ -50,6 +51,7 @@ export default {
     restoreConfirm: 'Confirmar restauro? Os dados atuais serão sobrescritos.',
     restoreSuccess: 'Restauro concluído. Reinicie o servidor.',
     noBackup: 'Nenhum arquivo de backup',
+    serverUrlRequired: 'Por favor, insira o endereço do servidor',
   },
 
   currency: {
@@ -113,6 +115,8 @@ export default {
     orderSubmitted: 'Enviado',
     totalAmount: 'Valor Total',
     waiterRequired: 'Por favor, use uma conta de garçom',
+    loginSuccess: 'Login realizado com sucesso',
+    loginRequired: 'Faça login com a conta do garçom primeiro',
     tableConflict: 'Esta mesa já tem um pedido pendente. Por favor, pague primeiro.',
   },
 
@@ -145,6 +149,9 @@ export default {
     cancelSuccess: 'Pedido cancelado',
     reopenOrder: 'Reabrir Pedido',
     reopenSuccess: 'Pedido reaberto',
+    deleteOrder: 'Eliminar Pedido',
+    deleteOrderConfirm: 'Confirmar eliminação permanente deste pedido? Esta ação não pode ser revertida.',
+    deleteSuccess: 'Pedido eliminado',
   },
 
   menu: {

@@ -40,6 +40,7 @@ export default {
     required: '此项为必填',
     server: '服务器',
     serverUrl: '服务器地址',
+    serverError: '服务器连接失败:',
     loadError: '加载失败: {msg}',
     dbInfo: '数据库信息',
     dbSize: '数据库大小',
@@ -50,6 +51,7 @@ export default {
     restoreConfirm: '确认从备份恢复？当前数据将被覆盖。',
     restoreSuccess: '已从备份恢复，请重启服务',
     noBackup: '暂无备份文件',
+    serverUrlRequired: '请输入服务器地址',
   },
 
   currency: {
@@ -112,6 +114,8 @@ export default {
     orderSubmitted: '已提交',
     totalAmount: '合计金额',
     waiterRequired: '请使用服务员账号登录',
+    loginSuccess: '登录成功',
+    loginRequired: '请先登录服务员账号',
   },
 
   admin: {
@@ -144,6 +148,9 @@ export default {
     reopenOrder: '恢复待结账',
     reopenSuccess: '订单已恢复为待结账',
     tableConflict: '该桌号已有待结账订单，请先结账后再下单',
+    deleteOrder: '删除订单',
+    deleteOrderConfirm: '确认永久删除该订单？此操作不可恢复。',
+    deleteSuccess: '订单已删除',
   },
 
   menu: {

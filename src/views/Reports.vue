@@ -111,7 +111,7 @@ onMounted(async () => {
     dishTopData.value = dishes
     categoryList.value = cats
     dishList.value = allDishes
-  } catch {}
+  } catch (e) { console.error('加载报表数据失败:', e) }
 })
 </script>
 

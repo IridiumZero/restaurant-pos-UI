@@ -8,8 +8,8 @@
       </div>
     </div>
     <div class="filter-bar">
-      <el-radio-group v-model="filterCategory" size="small">
-        <el-radio-button v-for="cat in filterCategories" :key="cat.name" :value="cat.name">{{ cat.label }}</el-radio-button>
+      <el-radio-group v-model="filterCategory" size="default" class="category-tabs">
+        <el-radio-button v-for="cat in filterCategories" :key="cat.name" :value="cat.name" class="category-tab">{{ cat.label }}</el-radio-button>
       </el-radio-group>
     </div>
     <div class="dish-card-list" v-loading="loading">
@@ -36,8 +36,8 @@
       <div v-if="!loading && !filteredDishes.length" class="empty-hint">{{ t('menu.noDish') }}</div>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? t('menu.editDish') : t('menu.addDish')" width="90%" :close-on-click-modal="false">
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="120px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? t('menu.editDish') : t('menu.addDish')" width="680px" :close-on-click-modal="false" class="dish-dialog">
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="90px" class="dish-form">
         <el-form-item :label="t('menu.dishName')" prop="name"><el-input v-model="form.name" :placeholder="t('menu.placeholderName')" /></el-form-item>
         <el-form-item :label="t('menu.dishNamePt')"><el-input v-model="form.name_pt" :placeholder="t('menu.placeholderNamePt')" /></el-form-item>
         <el-form-item :label="t('menu.dishNameEn')"><el-input v-model="form.name_en" :placeholder="t('menu.placeholderNameEn')" /></el-form-item>
@@ -80,7 +80,7 @@
     </el-dialog>
 
     <!-- 分类管理对话框 -->
-    <el-dialog v-model="categoryDialogVisible" :title="t('menu.manageCategory')" width="520px" :close-on-click-modal="false">
+    <el-dialog v-model="categoryDialogVisible" :title="t('menu.manageCategory')" width="560px" :close-on-click-modal="false" class="category-dialog">
       <div class="category-add-row">
         <el-input v-model="newCategoryName" :placeholder="t('menu.newCategoryPlaceholder')" size="small" style="flex:2" @keyup.enter="handleAddCategory" />
         <el-input v-model="newCategoryNamePt" :placeholder="t('menu.categoryNamePt')" size="small" style="flex:2" />
@@ -104,7 +104,7 @@
             <el-button size="small" :icon="Top" text @click="moveCategoryUp(idx)" :disabled="idx === 0" v-if="isAdmin" />
             <el-button size="small" :icon="Bottom" text @click="moveCategoryDown(idx)" :disabled="idx === categoryList.length - 1" v-if="isAdmin" />
             <el-button size="small" :icon="Edit" text @click="startEditCategory(cat)" v-if="isAdmin" />
-            <el-button size="small" type="danger" :icon="Delete" text @click="handleDeleteCategory(cat)" v-if="isAdmin" />
+            <el-button size="small" type="danger" :icon="Delete" @click="handleDeleteCategory(cat)" v-if="isAdmin" class="category-delete-btn">{{ t('common.delete') }}</el-button>
           </template>
         </div>
       </div>
@@ -165,10 +165,10 @@ function getDishCategoryLabel(dish) {
 }
 
 async function loadCategories() {
-  try { categoryList.value = await api.getCategories() } catch {}
+  try { categoryList.value = await api.getCategories() } catch (e) { console.error('加载分类失败:', e) }
 }
 
-async function load() { loading.value = true; try { dishes.value = await api.getDishes() } catch {}; loading.value = false }
+async function load() { loading.value = true; try { dishes.value = await api.getDishes() } catch (e) { console.error('加载菜品失败:', e) }; loading.value = false }
 function showAddDialog() { isEdit.value = false; editingId.value = null; form.name = ''; form.name_pt = ''; form.name_en = ''; form.category = []; form.price = 0; form.remark = ''; form.remark_pt = ''; form.remark_en = ''; form.status = 'active'; form.image = ''; imagePreview.value = ''; dialogVisible.value = true; setTimeout(() => formRef.value?.resetFields(), 0) }
 function showEditDialog(row) { isEdit.value = true; editingId.value = row.id; form.name = row.name; form.name_pt = row.name_pt || ''; form.name_en = row.name_en || ''; form.category = row.category ? row.category.split(',') : []; form.price = row.price; form.remark = row.remark || ''; form.remark_pt = row.remark_pt || ''; form.remark_en = row.remark_en || ''; form.status = row.status || 'active'; form.image = row.image || ''; imagePreview.value = row.image || ''; dialogVisible.value = true }
 
@@ -226,7 +226,7 @@ async function handleDelete(row) {
   try {
     await ElMessageBox.confirm(t('menu.deleteConfirm'), t('common.confirm'), { confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel'), type: 'warning' })
     await api.deleteDish(row.id); ElMessage.success(t('menu.deleteSuccess')); await load()
-  } catch {}
+  } catch (e) { console.error('删除菜品失败:', e) }
 }
 
 // ── Dish sort order ──────────────────────────────────────
@@ -309,7 +309,7 @@ async function handleDeleteCategory(cat) {
     await api.deleteCategory(cat.id)
     await loadCategories()
     await load()
-  } catch {}
+  } catch (e) { console.error('删除分类失败:', e) }
 }
 
 async function moveCategoryUp(idx) {
@@ -333,31 +333,702 @@ onMounted(() => { load(); loadCategories() })
 </script>
 
 <style scoped>
-.menu-manage { background:#fff; padding:16px; height:100%; display:flex; flex-direction:column; }
-.page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-shrink:0; }
-.page-header h2 { margin:0; font-size:18px; }
-.header-buttons { display:flex; gap:8px; }
-.filter-bar { margin-bottom:12px; flex-shrink:0; overflow-x:auto; white-space:nowrap; }
-.dish-card-list { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
-.dish-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid #f0f0f0; gap:8px; flex-wrap:wrap; }
-.dish-row-main { display:flex; align-items:center; gap:8px; min-width:0; }
-.dish-row-id { color:#c0c4cc; font-size:12px; min-width:28px; }
-.dish-row-name { font-weight:500; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.dish-row-remark { color:#909399; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px; }
-.dish-row-price { color:#f56c6c; font-weight:bold; font-size:14px; min-width:80px; text-align:right; }
-.dish-row-right { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-.empty-hint { text-align:center; color:#c0c4cc; padding:40px 0; font-size:14px; }
-.dish-thumb { width:40px;height:40px;border-radius:8px;overflow:hidden;flex-shrink:0; }
-.dish-thumb img { width:100%;height:100%;object-fit:cover; }
-.dish-thumb-letter { width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:bold; }
-.image-upload { display:flex;align-items:center; }
-.image-preview { position:relative; width:120px;height:120px;border-radius:8px;overflow:hidden;border:1px solid #e4e7ed; }
-.image-preview img { width:100%;height:100%;object-fit:cover; }
-.image-clear-btn { position:absolute;top:4px;right:4px; }
-.category-add-row { display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap; }
-.category-list { max-height:400px;overflow-y:auto; }
-.category-row { display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap; }
-.category-name { flex:1;font-size:14px;font-weight:500;min-width:0; }
-.category-count { color:#c0c4cc;font-size:12px;margin-right:4px; }
-.category-edit-fields { flex:1;display:flex;flex-direction:column;gap:4px;min-width:0; }
+.menu-manage { 
+  background: transparent;
+  padding: 20px; 
+  height: 100%; 
+  display: flex; 
+  flex-direction: column;
+}
+
+.page-header { 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  margin-bottom: 16px; 
+  flex-shrink: 0;
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.page-header h2 { 
+  margin: 0; 
+  font-size: 22px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.header-buttons { 
+  display: flex; 
+  gap: 10px;
+}
+
+.header-buttons :deep(.el-button) {
+  transition: all 0.3s ease;
+}
+
+.header-buttons :deep(.el-button:hover) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.filter-bar { 
+  margin-bottom: 16px; 
+  flex-shrink: 0; 
+  overflow-x: auto; 
+  white-space: nowrap;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Tab group styling */
+.category-tabs {
+  display: inline-flex;
+  gap: 8px;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* Individual tab button */
+.category-tab :deep(.el-radio-button__inner) {
+  padding: 8px 20px !important;
+  border: 2px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  color: #64748b !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Tab hover effect */
+.category-tab :deep(.el-radio-button__inner:hover) {
+  border-color: #667eea !important;
+  color: #667eea !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2) !important;
+  background: rgba(102, 126, 234, 0.05) !important;
+}
+
+/* Active/Selected tab */
+.category-tab :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  border: 2px solid #667eea !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+  transform: translateY(-3px) scale(1.02) !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  position: relative;
+}
+
+/* Active tab indicator - bottom bar */
+.category-tab :deep(.el-radio-button.is-active .el-radio-button__inner)::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #fff, transparent);
+  border-radius: 2px;
+}
+
+/* Active tab pulse animation */
+.category-tab :deep(.el-radio-button.is-active .el-radio-button__inner)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  transition: left 0.5s;
+}
+
+.category-tab :deep(.el-radio-button.is-active:hover .el-radio-button__inner)::before {
+  left: 100%;
+}
+
+.dish-card-list { 
+  flex: 1; 
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch;
+  padding: 4px;
+}
+
+.dish-row { 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  padding: 16px 20px; 
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  gap: 12px; 
+  flex-wrap: wrap;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.dish-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.dish-row:hover {
+  transform: translateX(4px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15);
+}
+
+.dish-row:hover::before {
+  opacity: 1;
+}
+
+.dish-row-main { 
+  display: flex; 
+  align-items: center; 
+  gap: 12px; 
+  min-width: 0;
+  flex: 1;
+}
+
+.dish-row-id { 
+  color: #c0c4cc; 
+  font-size: 13px;
+  min-width: 32px;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+.dish-row-name { 
+  font-weight: 600; 
+  font-size: 15px;
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+  white-space: nowrap;
+  color: #303133;
+}
+
+.dish-row-remark { 
+  color: #909399; 
+  font-size: 13px; 
+  overflow: hidden; 
+  text-overflow: ellipsis; 
+  white-space: nowrap; 
+  max-width: 180px;
+}
+
+.dish-row-price { 
+  font-size: 18px; 
+  font-weight: 700;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  min-width: 100px; 
+  text-align: right;
+}
+
+.dish-row-right { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  flex-shrink: 0;
+}
+
+.dish-row-right :deep(.el-button) {
+  transition: all 0.3s ease;
+}
+
+.dish-row-right :deep(.el-button:hover) {
+  transform: translateY(-2px);
+}
+
+.empty-hint { 
+  text-align: center; 
+  color: #c0c4cc; 
+  padding: 60px 0; 
+  font-size: 15px;
+}
+
+.dish-thumb { 
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.dish-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.dish-thumb img { 
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dish-thumb-letter { 
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.image-upload { 
+  display: flex;
+  align-items: center;
+}
+
+.image-preview { 
+  position: relative; 
+  width: 140px;
+  height: 140px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid #e4e7ed;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.image-preview:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+}
+
+.image-preview img { 
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-clear-btn { 
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  transition: all 0.3s ease;
+}
+
+.image-clear-btn:hover {
+  transform: scale(1.1);
+}
+
+.category-add-row { 
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+  border-radius: 10px;
+}
+
+.category-list { 
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.category-row { 
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin: 8px 0;
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 10px;
+  border: 1px solid #e4e7ed;
+  transition: all 0.3s ease;
+  flex-wrap: wrap;
+}
+
+.category-row:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+  transform: translateX(4px);
+}
+
+/* Delete button styling */
+.category-delete-btn {
+  background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(255, 65, 108, 0.3) !important;
+  font-weight: 600 !important;
+  min-width: 70px;
+  color: #fff !important;
+}
+
+.category-delete-btn:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 16px rgba(255, 65, 108, 0.5) !important;
+  background: linear-gradient(135deg, #ff4b2b 0%, #ff416c 100%) !important;
+}
+
+.category-delete-btn:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 8px rgba(255, 65, 108, 0.4) !important;
+}
+
+.category-delete-btn .el-icon {
+  font-size: 16px !important;
+  margin-right: 4px;
+}
+
+.category-name { 
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  min-width: 0;
+  color: #303133;
+}
+
+.category-count { 
+  color: #909399;
+  font-size: 13px;
+  margin-right: 6px;
+  font-weight: 500;
+}
+
+.category-edit-fields { 
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .menu-manage {
+    padding: 12px;
+  }
+  
+  .page-header {
+    padding: 12px 16px;
+  }
+  
+  .page-header h2 {
+    font-size: 18px;
+  }
+  
+  .dish-row {
+    padding: 12px 16px;
+  }
+  
+  .dish-row-price {
+    font-size: 16px;
+  }
+}
+
+/* Scrollbar styling */
+.dish-card-list::-webkit-scrollbar,
+.category-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dish-card-list::-webkit-scrollbar-track,
+.category-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dish-card-list::-webkit-scrollbar-thumb,
+.category-list::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.3);
+  border-radius: 3px;
+}
+
+.dish-card-list::-webkit-scrollbar-thumb:hover,
+.category-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 126, 234, 0.5);
+}
+
+/* ========================================
+   Dialog Optimization
+   ======================================== */
+
+/* Dialog container */
+/* Form styling */
+.dish-form {
+  background: #ffffff !important;
+  padding: 24px !important;
+  border-radius: 12px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Form item spacing */
+.dish-form :deep(.el-form-item) {
+  margin-bottom: 18px !important;
+}
+
+.dish-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0 !important;
+}
+
+/* Form label */
+.dish-form :deep(.el-form-item__label) {
+  font-weight: 600 !important;
+  color: #4a5568 !important;
+  font-size: 13px !important;
+  line-height: 32px !important;
+  letter-spacing: 0.3px !important;
+}
+
+.dish-form :deep(.el-form-item__label::before) {
+  color: #f56c6c !important;
+  font-weight: 700 !important;
+  margin-right: 2px !important;
+}
+
+/* Input and Select unified styling */
+.dish-form :deep(.el-input__wrapper),
+.dish-form :deep(.el-select .el-input__wrapper) {
+  border-radius: 8px !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+  background-color: #ffffff !important;
+  border: 1.5px solid #e2e8f0 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  padding: 6px 12px !important;
+}
+
+.dish-form :deep(.el-input__wrapper:hover),
+.dish-form :deep(.el-select .el-input__wrapper:hover) {
+  border-color: #cbd5e0 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+}
+
+.dish-form :deep(.el-input__wrapper.is-focus),
+.dish-form :deep(.el-select .el-input__wrapper.is-focus) {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12), 0 4px 12px rgba(102, 126, 234, 0.15) !important;
+  background-color: #ffffff !important;
+}
+
+.dish-form :deep(.el-input__inner) {
+  font-size: 14px !important;
+  color: #2d3748 !important;
+  height: 28px !important;
+  line-height: 28px !important;
+}
+
+.dish-form :deep(.el-input__inner::placeholder) {
+  color: #a0aec0 !important;
+  font-weight: 400 !important;
+}
+
+/* Select dropdown */
+.dish-form :deep(.el-select-dropdown) {
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+  border: 1px solid #e2e8f0 !important;
+  overflow: hidden !important;
+  padding: 6px !important;
+}
+
+.dish-form :deep(.el-select-dropdown__item) {
+  border-radius: 6px !important;
+  margin: 2px 0 !important;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  transition: all 0.2s ease !important;
+}
+
+.dish-form :deep(.el-select-dropdown__item:hover) {
+  background-color: rgba(102, 126, 234, 0.08) !important;
+  color: #667eea !important;
+}
+
+.dish-form :deep(.el-select-dropdown__item.is-selected) {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.12) 0%, rgba(118, 75, 162, 0.12) 100%) !important;
+  color: #667eea !important;
+  font-weight: 600 !important;
+}
+
+.dish-form :deep(.el-select-dropdown__item.is-selected::after) {
+  color: #667eea !important;
+  font-weight: 700 !important;
+}
+
+/* Number input */
+.dish-form :deep(.el-input-number) {
+  width: 100% !important;
+}
+
+.dish-form :deep(.el-input-number .el-input__wrapper) {
+  padding-right: 60px !important;
+}
+
+.dish-form :deep(.el-input-number__decrease),
+.dish-form :deep(.el-input-number__increase) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  transition: all 0.3s ease !important;
+  font-weight: 700 !important;
+  font-size: 16px !important;
+  width: 32px !important;
+}
+
+.dish-form :deep(.el-input-number__decrease:hover),
+.dish-form :deep(.el-input-number__increase:hover) {
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%) !important;
+  transform: scale(1.08) !important;
+}
+
+.dish-form :deep(.el-input-number__decrease:active),
+.dish-form :deep(.el-input-number__increase:active) {
+  transform: scale(0.95) !important;
+}
+
+/* Image upload */
+.image-upload {
+  display: flex;
+  align-items: center;
+}
+
+.image-preview {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+}
+
+.image-preview:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.25);
+  transform: scale(1.02);
+}
+
+.image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-clear-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+  transition: all 0.3s ease;
+}
+
+.image-clear-btn:hover {
+  transform: scale(1.15) rotate(90deg) !important;
+  background: #ff416c !important;
+  color: #ffffff !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .dish-dialog :deep(.el-dialog) {
+    width: 95% !important;
+    margin: 20px auto !important;
+  }
+  
+  .dish-form {
+    padding: 16px !important;
+  }
+  
+  .dish-dialog :deep(.el-dialog__body) {
+    padding: 16px !important;
+  }
+  
+  .image-preview {
+    width: 100px;
+    height: 100px;
+  }
+}
+
+/* ========================================
+   Category Dialog
+   ======================================== */
+
+.category-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  padding: 12px;
+  background: #ffffff !important;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+.category-add-row :deep(.el-input__wrapper) {
+  border-radius: 8px !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+  background-color: #ffffff !important;
+  border: 1.5px solid #e2e8f0 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  padding: 6px 12px !important;
+}
+
+.category-add-row :deep(.el-input__wrapper:hover) {
+  border-color: #cbd5e0 !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+}
+
+.category-add-row :deep(.el-input__wrapper.is-focus) {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.12), 0 4px 12px rgba(102, 126, 234, 0.15) !important;
+}
+
+.category-add-row :deep(.el-input__inner) {
+  font-size: 13px !important;
+  color: #2d3748 !important;
+  height: 26px !important;
+  line-height: 26px !important;
+}
+
+.category-add-row :deep(.el-input__inner::placeholder) {
+  color: #a0aec0 !important;
+}
+
+.category-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 8px;
+  background: #ffffff !important;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+}
 </style>

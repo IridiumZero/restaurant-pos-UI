@@ -39,9 +39,13 @@
 
       <div class="category-bar">
         <div class="category-tabs">
-          <el-radio-group v-model="activeCategory" size="large">
-            <el-radio-button v-for="cat in categories" :key="cat.name" :value="cat.name">{{ cat.label }}</el-radio-button>
-          </el-radio-group>
+          <button
+            v-for="cat in categories"
+            :key="cat.name"
+            class="cat-btn"
+            :class="{ active: activeCategory === cat.name }"
+            @click="activeCategory = cat.name"
+          >{{ cat.label }}</button>
         </div>
       </div>
 
@@ -646,60 +650,46 @@ onMounted(async () => {
   border-bottom: 1.5px solid rgba(102, 126, 234, 0.1);
 }
 
-.category-bar :deep(.category-tabs) {
+.category-tabs {
   display: inline-flex;
   gap: 10px;
 }
 
-.category-bar :deep(.el-radio-group) {
-  background: transparent !important;
-  border: none !important;
-  padding: 0 !important;
-  flex-wrap: nowrap !important;
-}
-
-.category-bar :deep(.el-radio-button__inner) {
-  padding: 10px 24px !important;
-  border: 2px solid #e2e8f0 !important;
-  border-radius: 12px !important;
-  background: #ffffff !important;
-  color: #64748b !important;
-  font-weight: 600 !important;
-  font-size: 14px !important;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+.cat-btn {
+  padding: 10px 24px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
   position: relative;
   overflow: hidden;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+  line-height: 1.4;
 }
 
-.category-bar :deep(.el-radio-button__inner:hover) {
-  border-color: #667eea !important;
-  color: #667eea !important;
-  transform: translateY(-2px) !important;
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.25) !important;
-  background: rgba(102, 126, 234, 0.08) !important;
+.cat-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.25);
+  background: rgba(102, 126, 234, 0.08);
 }
 
-.category-bar :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-  border: 2px solid #667eea !important;
-  color: #ffffff !important;
-  font-weight: 700 !important;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-  transform: translateY(-3px) scale(1.05) !important;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
-}
-
-.category-bar :deep(.el-radio-button.is-active .el-radio-button__inner)::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 60%;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, #fff, transparent);
-  border-radius: 2px;
+.cat-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: 2px solid #667eea;
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateY(-3px) scale(1.05);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* ==================== 菜品网格 ==================== */

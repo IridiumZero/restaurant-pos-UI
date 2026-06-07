@@ -43,7 +43,8 @@
             v-for="cat in categories"
             :key="cat.name"
             class="cat-btn"
-            :class="{ active: activeCategory === cat.name }"
+            :class="{ 'is-active': activeCategory === cat.name }"
+            :style="activeCategory === cat.name ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', borderColor: '#667eea', fontWeight: 700, boxShadow: '0 8px 24px rgba(102,126,234,0.5)', transform: 'translateY(-3px) scale(1.05)' } : {}"
             @click="activeCategory = cat.name"
           >{{ cat.label }}</button>
         </div>
@@ -682,7 +683,7 @@ onMounted(async () => {
   background: rgba(102, 126, 234, 0.08);
 }
 
-.cat-btn.active {
+.cat-btn.is-active {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: 2px solid #667eea;
   color: #ffffff;

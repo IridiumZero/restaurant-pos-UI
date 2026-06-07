@@ -38,9 +38,11 @@
       </div>
 
       <div class="category-bar">
-        <el-radio-group v-model="activeCategory" size="large" class="category-tabs">
-          <el-radio-button v-for="cat in categories" :key="cat.name" :value="cat.name" class="category-tab">{{ cat.label }}</el-radio-button>
-        </el-radio-group>
+        <div class="category-tabs">
+          <el-radio-group v-model="activeCategory" size="large">
+            <el-radio-button v-for="cat in categories" :key="cat.name" :value="cat.name">{{ cat.label }}</el-radio-button>
+          </el-radio-group>
+        </div>
       </div>
 
       <div class="dish-grid" v-loading="loading">
@@ -644,15 +646,19 @@ onMounted(async () => {
   border-bottom: 1.5px solid rgba(102, 126, 234, 0.1);
 }
 
-.category-bar .category-tabs {
+.category-bar :deep(.category-tabs) {
   display: inline-flex;
   gap: 10px;
+}
+
+.category-bar :deep(.el-radio-group) {
   background: transparent !important;
   border: none !important;
   padding: 0 !important;
+  flex-wrap: nowrap !important;
 }
 
-.category-bar .category-tab :deep(.el-radio-button__inner) {
+.category-bar :deep(.el-radio-button__inner) {
   padding: 10px 24px !important;
   border: 2px solid #e2e8f0 !important;
   border-radius: 12px !important;
@@ -666,7 +672,7 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-.category-bar .category-tab :deep(.el-radio-button__inner:hover) {
+.category-bar :deep(.el-radio-button__inner:hover) {
   border-color: #667eea !important;
   color: #667eea !important;
   transform: translateY(-2px) !important;
@@ -674,7 +680,7 @@ onMounted(async () => {
   background: rgba(102, 126, 234, 0.08) !important;
 }
 
-.category-bar .category-tab :deep(.el-radio-button.is-active .el-radio-button__inner) {
+.category-bar :deep(.el-radio-button.is-active .el-radio-button__inner) {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
   border: 2px solid #667eea !important;
   color: #ffffff !important;
@@ -684,7 +690,7 @@ onMounted(async () => {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
 }
 
-.category-bar .category-tab :deep(.el-radio-button.is-active .el-radio-button__inner)::after {
+.category-bar :deep(.el-radio-button.is-active .el-radio-button__inner)::after {
   content: '';
   position: absolute;
   bottom: 0;

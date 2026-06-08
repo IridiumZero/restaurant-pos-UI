@@ -381,7 +381,7 @@ describe('Database Backup', () => {
   it('POST /api/db/backup 创建备份', async () => {
     const { status, data } = await req('POST', '/api/db/backup', null, adminToken)
     assert.equal(status, 200)
-    assert.ok(data.message)
+    assert.ok(data.message_code === 'backup_completed' || data.success)
   })
 })
 

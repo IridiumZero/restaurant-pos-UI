@@ -1,13 +1,5 @@
-import { reactive, computed } from 'vue'
-import zh from './zh.js'
-import pt from './pt.js'
-import en from './en.js'
-
-const messages = { zh, pt, en }
-
-const state = reactive({
-  locale: localStorage.getItem('lang') || 'zh',
-})
+import { computed } from 'vue'
+import { state, messages } from './state.js'
 
 export const localeOptions = [
   { value: 'zh', label: '中文' },

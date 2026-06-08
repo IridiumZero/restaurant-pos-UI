@@ -54,6 +54,45 @@ export default {
     serverUrlRequired: 'Por favor, insira o endereço do servidor',
   },
 
+  errors: {
+    // Autenticação
+    not_logged_in: 'Não autenticado',
+    permission_denied: 'Permissão negada',
+    account_disabled: 'Conta desativada',
+    session_kicked: 'Esta conta foi iniciada noutro dispositivo. Autentique-se novamente.',
+    session_expired: 'Sessão expirada',
+    login_rate_limited: 'Muitas tentativas. Aguarde 5 minutos.',
+    login_fields_required: 'Insira o código e a senha',
+    login_failed: 'Código ou senha incorretos',
+    ws_auth_failed: 'Falha na autenticação',
+    // Pedidos
+    order_table_required: 'Selecione a mesa e adicione pratos',
+    table_conflict: 'Esta mesa já tem um pedido pendente. Conclua o pagamento primeiro.',
+    order_amount_required: 'Valor do pedido em falta',
+    order_not_found: 'Pedido não encontrado',
+    order_draft_only: 'Apenas rascunhos podem ser enviados',
+    order_id_invalid: 'ID de pedido inválido',
+    // Sistema
+    print_failed: 'Falha ao imprimir',
+    backup_name_invalid: 'Nome de backup inválido',
+    backup_not_found: 'Ficheiro de backup especificado não encontrado',
+    backup_file_missing: 'Ficheiro de backup não encontrado',
+    restore_failed: 'Falha ao restaurar. Verifique a integridade do backup.',
+    server_error: 'Erro interno do servidor',
+    request_timeout: 'Tempo esgotado. Verifique a ligação à rede.',
+  },
+
+  offline: {
+    pendingSync: '{count} pedidos offline a sincronizar',
+    syncNow: 'Sincronizar agora',
+    syncResult: '{ok} pedidos offline sincronizados',
+    syncResultFail: ', {fail} falharam',
+    syncError: 'Falha na sincronização',
+    queuedDraft: 'Guardado na fila offline. Será sincronizado quando online.',
+    queuedSubmit: 'Pedido na fila. Será enviado quando online.',
+    menuLoaded: 'Menu carregado do cache offline',
+  },
+
   currency: {
     symbol: 'MT',
     code: 'MZN',

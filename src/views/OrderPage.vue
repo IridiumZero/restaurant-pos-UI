@@ -33,21 +33,19 @@
         <el-button size="small" text @click="showServerConfig = true" style="margin-left:auto">{{ t('common.edit') }}</el-button>
       </div>
       <div v-else-if="offlinePending > 0" class="server-status offline-sync">
-        <span class="status-dot sync" /> {{ offlinePending }} 个离线订单待同步
-        <el-button size="small" text @click="syncOfflineOrders" style="margin-left:auto">立即同步</el-button>
+        <span class="status-dot sync" /> {{ t('offline.pendingSync', { count: offlinePending }) }}
+        <el-button size="small" text @click="syncOfflineOrders" style="margin-left:auto">{{ t('offline.syncNow') }}</el-button>
       </div>
 
       <div class="category-bar">
-        <div class="category-tabs">
-          <button
+        <el-radio-group v-model="activeCategory" size="default" class="category-tabs">
+          <el-radio-button
             v-for="cat in categories"
             :key="cat.name"
-            class="cat-btn"
-            :class="{ 'is-active': activeCategory === cat.name }"
-            :style="activeCategory === cat.name ? { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', borderColor: '#667eea', fontWeight: 700, boxShadow: '0 8px 24px rgba(102,126,234,0.5)', transform: 'translateY(-3px) scale(1.05)' } : {}"
-            @click="activeCategory = cat.name"
-          >{{ cat.label }}</button>
-        </div>
+            :value="cat.name"
+            class="category-tab"
+          >{{ cat.label }}</el-radio-button>
+        </el-radio-group>
       </div>
 
       <div class="dish-grid" v-loading="loading">
@@ -249,10 +247,10 @@ async function syncOfflineOrders() {
     const results = await syncPendingOrders(api)
     const ok = results.filter(r => r.success).length
     const fail = results.filter(r => !r.success).length
-    if (ok) ElMessage.success(`${ok} 个离线订单已同步${fail ? `，${fail} 个失败` : ''}`)
+    if (ok) ElMessage.success(t('offline.syncResult', { ok }) + (fail ? t('offline.syncResultFail', { fail }) : ''))
     await refreshPendingCount()
     await loadMyOrders()
-  } catch (e) { ElMessage.error('同步失败: ' + e.message) }
+  } catch (e) { ElMessage.error(t('offline.syncError') + ': ' + e.message) }
 }
 
 // ── WebSocket 实时推送 ────────────────
@@ -340,7 +338,7 @@ async function saveAsDraft() {
     if (!isOnline.value || !serverOk.value) {
       // 离线：存入 IndexedDB
       await queueOrder(orderData)
-      ElMessage.success('已保存到离线队列，联网后自动同步')
+      ElMessage.success(t('offline.queuedDraft'))
       await refreshPendingCount()
     } else {
       await api.addOrder(orderData)
@@ -365,7 +363,7 @@ async function submitOrder() {
     if (!isOnline.value || !serverOk.value) {
       // 离线：存入 IndexedDB
       await queueOrder(orderData)
-      ElMessage.success('订单已排队，联网后自动提交')
+      ElMessage.success(t('offline.queuedSubmit'))
       await refreshPendingCount()
     } else {
       await api.addOrder(orderData)
@@ -379,7 +377,7 @@ async function submitOrder() {
 
 async function saveServerUrl() {
   if (!serverUrlInput.value) {
-    ElMessage.warning(t('common.serverUrlRequired') || '请输入服务器地址')
+    ElMessage.warning(t('common.serverUrlRequired'))
     return
   }
   
@@ -422,7 +420,7 @@ async function loadDishes() {
       if (cached) {
         dishes.value = cached.dishes
         categoryList.value = cached.categories
-        ElMessage.info('已加载离线缓存菜单')
+        ElMessage.info(t('offline.menuLoaded'))
       }
     } catch {}
     if (e.message) ElMessage.error(e.message)
@@ -651,46 +649,48 @@ onMounted(async () => {
   border-bottom: 1.5px solid rgba(102, 126, 234, 0.1);
 }
 
+/* Tab group styling */
 .category-tabs {
-  display: inline-flex;
-  gap: 10px;
+  display: inline-flex !important;
+  gap: 8px;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  flex-wrap: nowrap;
 }
 
-.cat-btn {
-  padding: 10px 24px;
-  border: 2px solid #e2e8f0;
-  border-radius: 12px;
-  background: #ffffff;
-  color: #64748b;
-  font-weight: 600;
-  font-size: 14px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
+/* Individual tab button */
+.category-tab :deep(.el-radio-button__inner) {
+  padding: 8px 20px !important;
+  border: 2px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
   position: relative;
   overflow: hidden;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-  white-space: nowrap;
-  line-height: 1.4;
 }
 
-.cat-btn:hover {
-  border-color: #667eea;
-  color: #667eea;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.25);
-  background: rgba(102, 126, 234, 0.08);
+/* Tab hover effect */
+.category-tab :deep(.el-radio-button__inner:hover) {
+  border-color: #667eea !important;
+  color: #667eea !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2) !important;
+  background: rgba(102, 126, 234, 0.05) !important;
 }
 
-.cat-btn.is-active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: 2px solid #667eea;
-  color: #ffffff;
-  font-weight: 700;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  transform: translateY(-3px) scale(1.05);
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+/* Active/Selected tab */
+.category-tab :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  border: 2px solid #667eea !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+  transform: translateY(-3px) scale(1.02) !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+  position: relative;
 }
 
 /* ==================== 菜品网格 ==================== */

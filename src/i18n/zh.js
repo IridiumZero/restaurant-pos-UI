@@ -54,6 +54,45 @@ export default {
     serverUrlRequired: '请输入服务器地址',
   },
 
+  errors: {
+    // 登录认证
+    not_logged_in: '未登录',
+    permission_denied: '权限不足',
+    account_disabled: '账号已被禁用',
+    session_kicked: '该账号已在其他设备登录，请重新登录',
+    session_expired: '登录已过期',
+    login_rate_limited: '登录尝试次数过多，请5分钟后再试',
+    login_fields_required: '请输入工号和密码',
+    login_failed: '工号或密码错误',
+    ws_auth_failed: '认证失败',
+    // 订单操作
+    order_table_required: '请选择桌号并添加菜品',
+    table_conflict: '该桌号已有待结账订单，请先结账后再下单',
+    order_amount_required: '缺少订单金额',
+    order_not_found: '订单不存在',
+    order_draft_only: '只能提交草稿订单',
+    order_id_invalid: '无效的订单ID',
+    // 系统
+    print_failed: '打印失败',
+    backup_name_invalid: '无效的备份文件名',
+    backup_not_found: '指定的备份文件不存在',
+    backup_file_missing: '备份文件不存在',
+    restore_failed: '恢复失败，请检查备份文件是否完整',
+    server_error: '服务器内部错误',
+    request_timeout: '请求超时，请检查网络连接',
+  },
+
+  offline: {
+    pendingSync: '{count} 个离线订单待同步',
+    syncNow: '立即同步',
+    syncResult: '{ok} 个离线订单已同步',
+    syncResultFail: '，{fail} 个失败',
+    syncError: '同步失败',
+    queuedDraft: '已保存到离线队列，联网后自动同步',
+    queuedSubmit: '订单已排队，联网后自动提交',
+    menuLoaded: '已加载离线缓存菜单',
+  },
+
   currency: {
     symbol: 'MT',
     code: 'MZN',

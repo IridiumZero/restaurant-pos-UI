@@ -90,22 +90,22 @@ const LOGIN_MAX_ATTEMPTS = 10 // 最多10次
 function auth(roles) {
   return (req, res, next) => {
     const header = req.headers.authorization
-    if (!header?.startsWith('Bearer ')) return res.status(401).json({ message: '未登录' })
+    if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'not_logged_in' })
     try {
       const payload = jwt.verify(header.slice(7), JWT_SECRET)
-      if (roles && !roles.includes(payload.role)) return res.status(403).json({ message: '权限不足' })
+      if (roles && !roles.includes(payload.role)) return res.status(403).json({ error: 'permission_denied' })
 
       // Check session validity: if token_version has been incremented, this token is stale
       if (payload.ver !== undefined) {
         const emp = findOne('employees', e => e.id === payload.id)
-        if (!emp || emp.status !== 'active') return res.status(401).json({ message: '账号已被禁用' })
-        if (emp.token_version !== payload.ver) return res.status(401).json({ message: '该账号已在其他设备登录，请重新登录' })
+        if (!emp || emp.status !== 'active') return res.status(401).json({ error: 'account_disabled' })
+        if (emp.token_version !== payload.ver) return res.status(401).json({ error: 'session_kicked' })
       }
 
       req.user = payload
       next()
     } catch {
-      res.status(401).json({ message: '登录已过期' })
+      res.status(401).json({ error: 'session_expired' })
     }
   }
 }
@@ -119,16 +119,16 @@ app.post('/api/auth/login', (req, res) => {
   const attempts = loginAttempts.get(ip) || []
   const recentAttempts = attempts.filter(t => now - t < LOGIN_WINDOW_MS)
   if (recentAttempts.length >= LOGIN_MAX_ATTEMPTS) {
-    return res.status(429).json({ message: '登录尝试次数过多，请5分钟后再试' })
+    return res.status(429).json({ error: 'login_rate_limited' })
   }
   loginAttempts.set(ip, [...recentAttempts, now])
 
   const employeeNo = req.body.employeeNo || req.body.username
   const { password } = req.body
-  if (!employeeNo || !password) return res.status(400).json({ message: '请输入工号和密码' })
+  if (!employeeNo || !password) return res.status(400).json({ error: 'login_fields_required' })
 
   const emp = findOne('employees', e => e.username === employeeNo && e.status === 'active')
-  if (!emp || !verifyPassword(password, emp.password)) return res.status(401).json({ message: '工号或密码错误' })
+  if (!emp || !verifyPassword(password, emp.password)) return res.status(401).json({ error: 'login_failed' })
 
   // 登录成功，清除该 IP 的计数
   loginAttempts.delete(ip)
@@ -282,12 +282,12 @@ app.get('/api/orders', auth(), (req, res) => {
 
 app.post('/api/orders', auth(), (req, res) => {
   const { tableNumber, items, totalAmount, status } = req.body
-  if (!tableNumber || !items?.length) return res.status(400).json({ message: '请选择桌号并添加菜品' })
+  if (!tableNumber || !items?.length) return res.status(400).json({ error: 'order_table_required' })
 
   // Check table conflict: prevent multiple pending orders on the same table
   if (status === 'pending') {
     const existing = findOne('orders', o => o.table_number === tableNumber && o.status === 'pending')
-    if (existing) return res.status(409).json({ message: `该桌号已有待结账订单 #${existing.id}，请先结账后再下单` })
+    if (existing) return res.status(409).json({ error: 'table_conflict', orderId: existing.id })
   }
 
   let order
@@ -311,8 +311,8 @@ app.post('/api/orders', auth(), (req, res) => {
 
 app.put('/api/orders/:id', auth(), (req, res) => {
   const { tableNumber, items, totalAmount, status } = req.body
-  if (!tableNumber || !items?.length) return res.status(400).json({ message: '请选择桌号并添加菜品' })
-  if (totalAmount === undefined || totalAmount === null) return res.status(400).json({ message: '缺少订单金额' })
+  if (!tableNumber || !items?.length) return res.status(400).json({ error: 'order_table_required' })
+  if (totalAmount === undefined || totalAmount === null) return res.status(400).json({ error: 'order_amount_required' })
   runTransaction(() => {
     const orderFields = {
       table_number: tableNumber, total_amount: Number(totalAmount)
@@ -334,12 +334,12 @@ app.put('/api/orders/:id', auth(), (req, res) => {
 
 app.post('/api/orders/:id/submit', auth(), (req, res) => {
   const order = findOne('orders', o => o.id === parseInt(req.params.id))
-  if (!order) return res.status(404).json({ message: '订单不存在' })
-  if (order.status !== 'draft') return res.status(400).json({ message: '只能提交草稿订单' })
+  if (!order) return res.status(404).json({ error: 'order_not_found' })
+  if (order.status !== 'draft') return res.status(400).json({ error: 'order_draft_only' })
   // 检查桌号冲突
   if (order.table_number) {
     const existing = findOne('orders', o => o.table_number === order.table_number && o.status === 'pending' && o.id !== order.id)
-    if (existing) return res.status(409).json({ message: `该桌号已有待结账订单 #${existing.id}` })
+    if (existing) return res.status(409).json({ error: 'table_conflict', orderId: existing.id })
   }
   update('orders', req.params.id, { status: 'pending' })
   broadcast('order_submitted', { id: parseInt(req.params.id), table: order.table_number })
@@ -355,9 +355,9 @@ app.post('/api/orders/:id/cancel', auth(['admin', 'cashier']), (req, res) => {
 // Delete order (admin only)
 app.delete('/api/orders/:id', auth(['admin']), (req, res) => {
   const orderId = parseInt(req.params.id)
-  if (isNaN(orderId)) return res.status(400).json({ message: '无效的订单ID' })
+  if (isNaN(orderId)) return res.status(400).json({ error: 'order_id_invalid' })
   const order = findOne('orders', o => o.id === orderId)
-  if (!order) return res.status(404).json({ message: '订单不存在' })
+  if (!order) return res.status(404).json({ error: 'order_not_found' })
   runTransaction(() => {
     removeWhere('order_items', oi => oi.order_id === orderId)
     remove('orders', orderId)
@@ -413,7 +413,7 @@ app.post('/api/orders/:id/reopen', auth(['admin', 'cashier']), (req, res) => {
 app.post('/api/orders/:id/print', auth(['admin', 'cashier']), (req, res) => {
   const orderId = parseInt(req.params.id)
   const order = findOne('orders', o => o.id === orderId)
-  if (!order) return res.status(404).json({ message: '订单不存在' })
+  if (!order) return res.status(404).json({ error: 'order_not_found' })
   order.items = find('order_items', oi => oi.order_id === order.id)
   for (const item of order.items) {
     const dish = findOne('dishes', d => d.id === item.dish_id)
@@ -426,14 +426,14 @@ app.post('/api/orders/:id/print', auth(['admin', 'cashier']), (req, res) => {
     const receiptLines = generateReceipt(order, req.query.lang || 'zh')
     const receiptText = formatReceiptText(receiptLines)
     printText(receiptText)
-    res.json({ success: true, printer: PRINTER_NAME || '(默认打印机)' })
+    res.json({ success: true, printer: PRINTER_NAME || '(Default Printer)' })
   } catch (e) {
-    res.status(500).json({ message: '打印失败: ' + e.message })
+    res.status(500).json({ error: 'print_failed', detail: e.message })
   }
 })
 
 app.get('/api/printers', auth(['admin', 'cashier']), (req, res) => {
-  res.json({ printers: listPrinters(), current: PRINTER_NAME || '(默认打印机)' })
+  res.json({ printers: listPrinters(), current: PRINTER_NAME || '(Default Printer)' })
 })
 
 // ── Employees ─────────────────────────────────────────
@@ -583,7 +583,7 @@ app.get('/api/db/info', auth(['admin']), (req, res) => {
 
 app.post('/api/db/backup', auth(['admin']), (req, res) => {
   save()
-  res.json({ message: '备份完成', time: new Date().toISOString() })
+  res.json({ success: true, message_code: 'backup_completed', time: new Date().toISOString() })
 })
 
 app.post('/api/db/restore', auth(['admin']), (req, res) => {
@@ -595,11 +595,11 @@ app.post('/api/db/restore', auth(['admin']), (req, res) => {
   if (name) {
     // Validate the backup name to prevent path traversal
     if (!/^data-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.sqlite$/.test(name)) {
-      return res.status(400).json({ message: '无效的备份文件名' })
+      return res.status(400).json({ error: 'backup_name_invalid' })
     }
-    if (!fs.existsSync(bakPath)) return res.status(404).json({ message: '指定的备份文件不存在' })
+    if (!fs.existsSync(bakPath)) return res.status(404).json({ error: 'backup_not_found' })
   } else {
-    if (!fs.existsSync(bakPath)) return res.status(404).json({ message: '备份文件不存在' })
+    if (!fs.existsSync(bakPath)) return res.status(404).json({ error: 'backup_file_missing' })
   }
 
   const safetyPath = path.join(__dirname, 'data.sqlite.before_restore')
@@ -607,9 +607,9 @@ app.post('/api/db/restore', auth(['admin']), (req, res) => {
   try {
     if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, safetyPath)
     fs.copyFileSync(bakPath, dbPath)
-    res.json({ message: '已从备份恢复，请重启服务以加载数据' })
+    res.json({ success: true, message_code: 'restore_completed' })
   } catch (e) {
-    res.status(500).json({ message: '恢复失败，请检查备份文件是否完整' })
+    res.status(500).json({ error: 'restore_failed' })
   }
 })
 
@@ -634,7 +634,7 @@ function setupWebSocket(server) {
             ws.isAuthenticated = true
             ws.send(JSON.stringify({ type: 'auth_ok' }))
           } catch {
-            ws.send(JSON.stringify({ type: 'auth_error', message: '认证失败' }))
+            ws.send(JSON.stringify({ type: 'auth_error', error: 'ws_auth_failed' }))
           }
         }
       } catch {}
@@ -669,7 +669,7 @@ function broadcast(event, data) {
 
 app.use((err, req, res, next) => {
   console.error(`[ERROR] ${req.method} ${req.path}:`, err.message)
-  res.status(500).json({ message: '服务器内部错误' })
+  res.status(500).json({ error: 'server_error' })
 })
 
 function getLanIp() {

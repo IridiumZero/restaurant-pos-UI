@@ -54,6 +54,45 @@ export default {
     serverUrlRequired: 'Please enter server address',
   },
 
+  errors: {
+    // Login / Auth
+    not_logged_in: 'Not logged in',
+    permission_denied: 'Permission denied',
+    account_disabled: 'Account has been disabled',
+    session_kicked: 'This account was logged in on another device. Please sign in again.',
+    session_expired: 'Session expired',
+    login_rate_limited: 'Too many login attempts. Please try again in 5 minutes.',
+    login_fields_required: 'Please enter employee ID and password',
+    login_failed: 'Incorrect employee ID or password',
+    ws_auth_failed: 'Authentication failed',
+    // Order operations
+    order_table_required: 'Please select a table and add dishes',
+    table_conflict: 'This table already has a pending order. Please complete checkout first.',
+    order_amount_required: 'Order amount is missing',
+    order_not_found: 'Order not found',
+    order_draft_only: 'Only draft orders can be submitted',
+    order_id_invalid: 'Invalid order ID',
+    // System
+    print_failed: 'Print failed',
+    backup_name_invalid: 'Invalid backup file name',
+    backup_not_found: 'Specified backup file not found',
+    backup_file_missing: 'Backup file not found',
+    restore_failed: 'Restore failed. Please check backup integrity.',
+    server_error: 'Internal server error',
+    request_timeout: 'Request timed out. Please check your network connection.',
+  },
+
+  offline: {
+    pendingSync: '{count} offline orders to sync',
+    syncNow: 'Sync Now',
+    syncResult: '{ok} offline orders synced',
+    syncResultFail: ', {fail} failed',
+    syncError: 'Sync failed',
+    queuedDraft: 'Saved to offline queue. Will sync when online.',
+    queuedSubmit: 'Order queued. Will submit when online.',
+    menuLoaded: 'Menu loaded from offline cache',
+  },
+
   currency: {
     symbol: 'MT',
     code: 'MZN',

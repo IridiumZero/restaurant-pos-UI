@@ -404,8 +404,6 @@ onMounted(() => { load(); loadCategories() })
   padding: 8px 20px !important;
   border: 2px solid #e2e8f0 !important;
   border-radius: 10px !important;
-  background: #ffffff !important;
-  color: #64748b !important;
   font-weight: 500 !important;
   font-size: 14px !important;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;

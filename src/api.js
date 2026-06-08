@@ -12,6 +12,21 @@ const BASE_URL = () => {
 }
 const REQUEST_TIMEOUT = 30000 // 30 seconds
 
+// ── 错误码翻译 ──────────────────────────────────────
+import { state as i18nState, getMessages } from './i18n/state.js'
+
+function translateError(data) {
+  // 优先使用 error code
+  if (data?.error) {
+    const locale = i18nState.locale || 'zh'
+    const msgs = getMessages()
+    const errMap = msgs[locale]?.errors || msgs.zh?.errors
+    if (errMap?.[data.error]) return errMap[data.error]
+  }
+  // fallback to server message or status text
+  return data?.message || `HTTP ${data?.status || 'error'}`
+}
+
 async function request(method, path, body, isPublic) {
   const headers = { 'Content-Type': 'application/json' }
   if (!isPublic) {
@@ -40,19 +55,23 @@ async function request(method, path, body, isPublic) {
         localStorage.removeItem('isLoggedIn')
         localStorage.removeItem('user')
         // Save kick-out message for the next page to show
-        if (data.message) sessionStorage.setItem('kickedOutMsg', data.message)
+        const errMsg = translateError(data)
+        if (errMsg) sessionStorage.setItem('kickedOutMsg', errMsg)
         // Redirect management pages to login
         if (window.location.hash.startsWith('#/admin')) {
           window.location.hash = '#/login'
         }
       }
-      throw new Error(data.message || `HTTP ${res.status}`)
+      throw new Error(translateError(data))
     }
     return data
   } catch (error) {
     clearTimeout(timeoutId)
     if (error.name === 'AbortError') {
-      throw new Error('请求超时，请检查网络连接')
+      const msgs = getMessages()
+      const locale = i18nState.locale || 'zh'
+      const timeoutMsg = msgs[locale]?.errors?.request_timeout || msgs.zh?.errors?.request_timeout || 'Request timed out'
+      throw new Error(timeoutMsg)
     }
     throw error
   }

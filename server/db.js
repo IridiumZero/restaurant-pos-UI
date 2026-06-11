@@ -33,6 +33,8 @@ async function init() {
   _migrateCategoriesMultilang()
   _migrateSortOrder()
   _migrateTokenVersion()
+  _migrateKitchenPrint()
+  _migrateFlavors()
 
   // Migrate from old JSON
   if (fs.existsSync(JSON_PATH)) {
@@ -193,6 +195,96 @@ function _migrateTokenVersion() {
   }
 }
 
+function _migrateKitchenPrint() {
+  const info = _all("PRAGMA table_info(order_items)")
+  const cols = info.map(r => r.name)
+  let migrated = false
+  if (!cols.includes('kitchen_status')) {
+    _db.run("ALTER TABLE order_items ADD COLUMN kitchen_status TEXT DEFAULT 'new'")
+    console.log('  Migrated: added order_items.kitchen_status column')
+    migrated = true
+  }
+  if (!cols.includes('printed_qty')) {
+    _db.run("ALTER TABLE order_items ADD COLUMN printed_qty INTEGER DEFAULT 0")
+    console.log('  Migrated: added order_items.printed_qty column')
+    migrated = true
+  }
+  if (!cols.includes('item_status')) {
+    _db.run("ALTER TABLE order_items ADD COLUMN item_status TEXT DEFAULT 'normal'")
+    console.log('  Migrated: added order_items.item_status column')
+    migrated = true
+  }
+  // Mark existing completed/cancelled order items as already printed
+  if (migrated) {
+    _db.run("UPDATE order_items SET kitchen_status = 'printed', printed_qty = quantity WHERE order_id IN (SELECT id FROM orders WHERE status IN ('completed','cancelled'))")
+    persist()
+  }
+}
+
+function _migrateFlavors() {
+  // Create flavors template table
+  _db.run(`CREATE TABLE IF NOT EXISTS flavors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    name_pt TEXT DEFAULT '',
+    name_en TEXT DEFAULT '',
+    options TEXT NOT NULL DEFAULT '[]',
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`)
+
+  // Create dish-flavor junction table
+  _db.run(`CREATE TABLE IF NOT EXISTS dish_flavors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dish_id INTEGER NOT NULL REFERENCES dishes(id) ON DELETE CASCADE,
+    flavor_id INTEGER NOT NULL REFERENCES flavors(id) ON DELETE CASCADE,
+    required INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    UNIQUE(dish_id, flavor_id)
+  )`)
+
+  // Add flavors column to order_items (JSON string storing selected flavors)
+  const oiInfo = _all("PRAGMA table_info(order_items)")
+  const oiCols = oiInfo.map(r => r.name)
+  if (!oiCols.includes('flavors')) {
+    _db.run("ALTER TABLE order_items ADD COLUMN flavors TEXT DEFAULT ''")
+    console.log('  Migrated: added order_items.flavors column')
+    persist()
+  }
+
+  // Add images column to dishes (JSON array of image paths)
+  const dishInfo = _all("PRAGMA table_info(dishes)")
+  const dishCols = dishInfo.map(r => r.name)
+  if (!dishCols.includes('images')) {
+    _db.run("ALTER TABLE dishes ADD COLUMN images TEXT DEFAULT ''")
+    // Migrate existing single image into images array
+    const allDishes = _all("SELECT id, image FROM dishes")
+    for (const d of allDishes) {
+      if (d.image) {
+        _db.run("UPDATE dishes SET images = ? WHERE id = ?", [JSON.stringify([d.image]), d.id])
+      }
+    }
+    console.log('  Migrated: added dishes.images column')
+    persist()
+  }
+
+  // Seed preset flavors if table is empty
+  if (_count('flavors') === 0) {
+    const presets = [
+      ['辣度', 'Picância', 'Spice Level', JSON.stringify(['不辣/Sem picante/Not spicy', '微辣/Ligeiramente picante/Mild', '中辣/Médio/Medium', '特辣/Muito picante/Hot']), 0],
+      ['甜度', 'Doçura', 'Sweetness', JSON.stringify(['无糖/Sem açúcar/No sugar', '少甜/Pouco doce/Less sweet', '正常甜/Normal/Normal', '多糖/Muito doce/Very sweet']), 1],
+      ['温度', 'Temperatura', 'Temperature', JSON.stringify(['热/Quente/Hot', '温/Morno/Warm', '冷/Frio/Cold', '加冰/Com gelo/With ice']), 2],
+      ['份量', 'Porção', 'Portion', JSON.stringify(['小份/Pequeno/Small', '中份/Médio/Medium', '大份/Grande/Large']), 3],
+    ]
+    for (const [name, name_pt, name_en, options, order] of presets) {
+      _db.run(`INSERT INTO flavors (name, name_pt, name_en, options, sort_order) VALUES (?, ?, ?, ?, ?)`,
+        [name, name_pt, name_en, options, order])
+    }
+    console.log('  Seeded 4 preset flavor templates')
+    persist()
+  }
+}
+
 function _migrateFromJSON(jsonData) {
   // Build set of valid column names for each table
   const schema = {
@@ -200,7 +292,7 @@ function _migrateFromJSON(jsonData) {
     employees: ['id', 'username', 'password', 'name', 'role', 'status', 'created_at'],
     dishes: ['id', 'name', 'name_pt', 'name_en', 'category', 'price', 'image', 'remark', 'remark_pt', 'remark_en', 'sort_order', 'status', 'created_at', 'updated_at'],
     orders: ['id', 'table_number', 'waiter_id', 'waiter_name', 'total_amount', 'status', 'payment_method', 'cash_received', 'change_amount', 'cashier_id', 'created_at', 'paid_at'],
-    order_items: ['id', 'order_id', 'dish_id', 'dish_name', 'dish_price', 'quantity', 'subtotal'],
+    order_items: ['id', 'order_id', 'dish_id', 'dish_name', 'dish_price', 'quantity', 'subtotal', 'kitchen_status', 'printed_qty', 'item_status'],
   }
 
   for (const table of ['categories', 'employees', 'dishes', 'orders', 'order_items']) {

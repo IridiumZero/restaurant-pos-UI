@@ -76,8 +76,8 @@ const categoryOption = computed(() => ({
 }))
 
 const paymentOption = computed(() => {
-  const colorMap = { '现金': '#67c23a', 'POS机': '#409EFF' }
-  const nameMap = { '现金': t('admin.cash'), 'POS机': t('admin.pos') }
+  const colorMap = { '现金': '#67c23a', 'POS机': '#409EFF', 'cash': '#67c23a', 'pos': '#409EFF' }
+  const nameMap = { '现金': t('admin.cash'), 'POS机': t('admin.pos'), 'cash': t('admin.cash'), 'pos': t('admin.pos') }
   return {
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
     legend: { bottom: 0 },

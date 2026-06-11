@@ -17,7 +17,7 @@
       <div class="summary-item"><span class="summary-label">{{ t('history.avgOrder') }}</span><span class="summary-value money">{{ formatCurrency(avgOrder) }}</span></div>
     </div>
     <div class="order-card-list" v-loading="loading">
-      <div v-for="order in filteredOrders" :key="order.id" class="order-card">
+      <div v-for="order in pagedOrders" :key="order.id" class="order-card">
         <div class="order-card-top">
           <span class="order-no">#{{ order.id }}</span>
           <el-tag size="small">{{ order.table_number }} {{ t('order.table') }}</el-tag>
@@ -30,12 +30,12 @@
         </div>
         <div class="order-card-bottom">
           <span class="order-time">{{ formatTime(order.created_at) }}</span>
-          <span v-if="normalizePayment(order.payment_method) === 'cash'" class="order-cash-detail">{{ t('admin.cashReceived') }} {{ formatCurrency(order.cash_received) }} / {{ t('admin.change') }} {{ formatCurrency(order.change_amount) }}</span>
+          <span v-if="normalizePayment(order.payment_method) === 'cash'" class="order-cash-detail">{{ t('admin.cashReceived') }} {{ formatCurrency(order.cash_received || 0) }} / {{ t('admin.change') }} {{ formatCurrency(order.change_amount || 0) }}</span>
           <el-button v-if="isAdmin" type="danger" size="small" :icon="Delete" circle plain @click="handleDelete(order)" class="delete-order-btn" />
         </div>
       </div>
-      <div class="pagination-wrap" v-if="totalOrders > pageSize">
-        <el-pagination background layout="prev, pager, next, total" :total="totalOrders" :page-size="pageSize" :current-page="currentPage" @current-change="handlePageChange" />
+      <div class="pagination-wrap" v-if="totalFiltered > pageSize">
+        <el-pagination background layout="prev, pager, next, total" :total="totalFiltered" :page-size="pageSize" :current-page="currentPage" @current-change="handlePageChange" />
       </div>
       <div v-if="!loading && !filteredOrders.length" class="empty-hint">{{ t('history.noOrders') }}</div>
     </div>
@@ -56,7 +56,7 @@ const isAdmin = computed(() => {
   try { return JSON.parse(localStorage.getItem('user') || '{}').role === 'admin' } catch { return false }
 })
 const allOrders = ref([]), waiterList = ref([]), dateRange = ref([]), paymentFilter = ref(''), waiterFilter = ref(null), loading = ref(false), dishMap = ref({})
-const currentPage = ref(1), pageSize = ref(20), totalOrders = ref(0)
+const currentPage = ref(1), pageSize = ref(20)
 
 watch([dateRange, paymentFilter, waiterFilter], () => {
   currentPage.value = 1
@@ -87,6 +87,12 @@ const filteredOrders = computed(() => {
 })
 const totalSales = computed(() => filteredOrders.value.reduce((s, o) => s + o.total_amount, 0))
 const avgOrder = computed(() => filteredOrders.value.length ? totalSales.value / filteredOrders.value.length : 0)
+const totalFiltered = computed(() => filteredOrders.value.length)
+
+const pagedOrders = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredOrders.value.slice(start, start + pageSize.value)
+})
 
 function formatTime(iso) {
   if (!iso) return ''
@@ -111,12 +117,11 @@ async function loadOrders() {
   loading.value = true
   try {
     const [res, waiters] = await Promise.all([
-      api.getOrders({ status: 'completed', page: currentPage.value, pageSize: pageSize.value }),
+      api.getOrders({ status: 'completed', pageSize: 9999 }),
       api.getWaiters(),
       loadDishes()
     ])
     allOrders.value = res.orders || res
-    totalOrders.value = res.total ?? allOrders.value.length
     waiterList.value = waiters
   } catch (e) { console.error('加载订单失败:', e) }
   finally { loading.value = false }
@@ -124,7 +129,6 @@ async function loadOrders() {
 
 function handlePageChange(page) {
   currentPage.value = page
-  loadOrders()
 }
 
 async function handleDelete(order) {

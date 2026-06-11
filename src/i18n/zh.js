@@ -72,6 +72,15 @@ export default {
     order_not_found: '订单不存在',
     order_draft_only: '只能提交草稿订单',
     order_id_invalid: '无效的订单ID',
+    order_must_be_pending: '只能对待结账订单加菜',
+    order_not_editable: '该订单状态不允许修改',
+    order_not_pending: '该订单不是待结账状态',
+    order_already_completed: '该订单已结账，无法取消',
+    items_required: '请选择要添加的菜品',
+    item_id_required: '缺少菜品编号',
+    item_not_found: '菜品不存在',
+    item_already_cancelled: '该菜品已退',
+    no_printable_items: '没有可打印的菜品',
     // 系统
     print_failed: '打印失败',
     backup_name_invalid: '无效的备份文件名',
@@ -123,6 +132,9 @@ export default {
     serverLabel: '服务器',
     serverPlaceholder: 'http://192.168.x.x:3000',
     serverHint: '模拟器请用 http://10.0.2.2:3000，真机请用电脑局域网IP',
+    checking: '正在检测服务器…',
+    connected: '服务器已连接',
+    connectFail: '连接失败，请检查服务器地址',
   },
 
   order: {
@@ -155,6 +167,8 @@ export default {
     waiterRequired: '请使用服务员账号登录',
     loginSuccess: '登录成功',
     loginRequired: '请先登录服务员账号',
+    qty: '数量',
+    flavorRequired: '请选择',
   },
 
   admin: {
@@ -190,6 +204,28 @@ export default {
     deleteOrder: '删除订单',
     deleteOrderConfirm: '确认永久删除该订单？此操作不可恢复。',
     deleteSuccess: '订单已删除',
+  },
+
+  kitchen: {
+    addItems: '加菜',
+    addItemsTitle: '加菜',
+    cancelItem: '退菜',
+    cancelItemTitle: '退菜',
+    reprint: '补打厨打单',
+    kitchenPrintOk: '厨打成功',
+    kitchenPrintFail: '厨打失败',
+    cancelReason: '退菜原因',
+    cancelReasonPlaceholder: '请输入退菜原因（选填）',
+    cancelQty: '退菜数量',
+    selectDish: '选择菜品',
+    qty: '数量',
+    addToOrder: '加入订单',
+    confirmAddItems: '确认加菜',
+    confirmCancelItem: '确认退菜',
+    addItemsSuccess: '加菜成功',
+    cancelItemSuccess: '退菜成功',
+    reprintSuccess: '补打成功',
+    cancelled: '已退',
   },
 
   menu: {
@@ -228,6 +264,11 @@ export default {
     dishRemarkPt: '葡语备注',
     dishRemarkEn: '英语备注',
     deleteCategoryConfirm: '确认删除分类"{name}"？',
+    flavorTitle: '口味选项',
+    flavorEnabled: '已启用',
+    flavorRequired: '必选',
+    imageLimit: '最多上传4张图片',
+    coverImage: '封面',
     categories: {
       hot: '热菜',
       cold: '凉菜',

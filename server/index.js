@@ -8,12 +8,9 @@ const jwt = require('jsonwebtoken')
 const os = require('os')
 const WebSocket = require('ws')
 const { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction } = require('./db')
-const { generateReceipt, formatReceiptText, printText, listPrinters, PRINTER_NAME } = require('./printer')
+const { generateReceipt, generateKitchenTicket, formatReceiptText, printText, printKitchen, listPrinters, PRINTER_NAME, KITCHEN_PRINTER_NAME } = require('./printer')
 
-const JWT_SECRET = process.env.JWT_SECRET || (() => {
-  console.warn('  ⚠ JWT_SECRET 未设置，使用随机密钥（重启后 token 将失效）')
-  return crypto.randomBytes(32).toString('hex')
-})()
+const JWT_SECRET = process.env.JWT_SECRET || 'moz-restaurant-jwt-secret-2024-fixed-key'
 const PORT = process.env.PORT || 3000
 
 const app = express()
@@ -163,14 +160,27 @@ app.get('/api/dishes', auth(), (req, res) => {
 })
 
 app.post('/api/dishes', auth(['admin', 'cashier']), (req, res) => {
-  const { name, name_pt, name_en, category, price, image, remark, remark_pt, remark_en, sort_order, status } = req.body
+  const { name, name_pt, name_en, category, price, image, images, remark, remark_pt, remark_en, sort_order, status } = req.body
   if (!name || !category || !price) return res.status(400).json({ message: '名称、分类、价格为必填项' })
   // category can be comma-separated for multi-select
   const catStr = Array.isArray(category) ? category.join(',') : category
+  // images: JSON array string; image = first image (cover)
+  let imagesVal = ''
+  if (images) {
+    imagesVal = typeof images === 'string' ? images : JSON.stringify(images)
+    try {
+      const arr = JSON.parse(imagesVal)
+      if (Array.isArray(arr) && arr.length) {
+        // cover = first image
+        var coverImage = arr[0]
+      }
+    } catch {}
+  }
+  if (!coverImage) coverImage = image || ''
   const allDishes = find('dishes', () => true)
   const maxOrder = allDishes.reduce((max, d) => Math.max(max, d.sort_order ?? 0), 0)
   const dish = insert('dishes', {
-    name, name_pt: name_pt || '', name_en: name_en || '', category: catStr, price: Number(price), image: image || '', remark: remark || '', remark_pt: remark_pt || '', remark_en: remark_en || '', sort_order: sort_order ?? (maxOrder + 1), status: status || 'active',
+    name, name_pt: name_pt || '', name_en: name_en || '', category: catStr, price: Number(price), image: coverImage, images: imagesVal, remark: remark || '', remark_pt: remark_pt || '', remark_en: remark_en || '', sort_order: sort_order ?? (maxOrder + 1), status: status || 'active',
     created_at: new Date().toISOString(), updated_at: new Date().toISOString()
   })
   res.json({ id: dish.id })
@@ -178,11 +188,20 @@ app.post('/api/dishes', auth(['admin', 'cashier']), (req, res) => {
 
 app.put('/api/dishes/:id', auth(['admin', 'cashier']), (req, res) => {
   const fields = { updated_at: new Date().toISOString() }
-  const keys = ['name', 'name_pt', 'name_en', 'category', 'price', 'image', 'remark', 'remark_pt', 'remark_en', 'sort_order', 'status']
+  const keys = ['name', 'name_pt', 'name_en', 'category', 'price', 'image', 'images', 'remark', 'remark_pt', 'remark_en', 'sort_order', 'status']
   for (const k of keys) {
     if (req.body[k] !== undefined) {
       if (k === 'price') fields[k] = Number(req.body[k])
       else if (k === 'category' && Array.isArray(req.body[k])) fields[k] = req.body[k].join(',')
+      else if (k === 'images') {
+        fields[k] = typeof req.body[k] === 'string' ? req.body[k] : JSON.stringify(req.body[k])
+        // Auto-update cover image
+        try {
+          const arr = JSON.parse(fields[k])
+          if (Array.isArray(arr) && arr.length) fields.image = arr[0]
+          else if (Array.isArray(arr) && !arr.length) fields.image = ''
+        } catch {}
+      }
       else fields[k] = req.body[k]
     }
   }
@@ -243,6 +262,92 @@ app.delete('/api/categories/:id', auth(['admin']), (req, res) => {
   res.json({ success: true })
 })
 
+// ── Flavors (口味模板) ──────────────────────────────────
+
+app.get('/api/flavors', auth(), (req, res) => {
+  const rows = find('flavors', () => true)
+  rows.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id)
+  // Parse options JSON for each row
+  for (const r of rows) {
+    try { r.options = JSON.parse(r.options) } catch { r.options = [] }
+  }
+  res.json(rows)
+})
+
+app.post('/api/flavors', auth(['admin']), (req, res) => {
+  const { name, name_pt, name_en, options, sort_order } = req.body
+  if (!name?.trim()) return res.status(400).json({ message: '口味名称不能为空' })
+  const opts = Array.isArray(options) ? JSON.stringify(options) : (options || '[]')
+  const flavor = insert('flavors', {
+    name: name.trim(), name_pt: name_pt || '', name_en: name_en || '',
+    options: opts, sort_order: sort_order ?? 99,
+    created_at: new Date().toISOString()
+  })
+  res.json({ ...flavor, options: JSON.parse(flavor.options) })
+})
+
+app.put('/api/flavors/:id', auth(['admin']), (req, res) => {
+  const { name, name_pt, name_en, options, sort_order } = req.body
+  const fields = {}
+  if (name !== undefined) fields.name = name.trim()
+  if (name_pt !== undefined) fields.name_pt = name_pt
+  if (name_en !== undefined) fields.name_en = name_en
+  if (options !== undefined) fields.options = Array.isArray(options) ? JSON.stringify(options) : options
+  if (sort_order !== undefined) fields.sort_order = sort_order
+  update('flavors', req.params.id, fields)
+  res.json({ success: true })
+})
+
+app.delete('/api/flavors/:id', auth(['admin']), (req, res) => {
+  const id = parseInt(req.params.id)
+  remove('flavors', id)
+  // Clean up junction table
+  const { removeWhere } = require('./db')
+  removeWhere('dish_flavors', df => df.flavor_id === id)
+  res.json({ success: true })
+})
+
+// ── Dish flavor associations ──────────────────────────
+
+app.get('/api/dishes/:id/flavors', auth(), (req, res) => {
+  const dishId = parseInt(req.params.id)
+  const dishFlavors = find('dish_flavors', df => df.dish_id === dishId)
+  // Enrich with flavor template data
+  const result = []
+  for (const df of dishFlavors.sort((a, b) => a.sort_order - b.sort_order)) {
+    const flavor = findOne('flavors', f => f.id === df.flavor_id)
+    if (flavor) {
+      let opts = flavor.options
+      try { opts = JSON.parse(opts) } catch { opts = [] }
+      result.push({
+        id: df.id, flavor_id: flavor.id, required: !!df.required,
+        sort_order: df.sort_order,
+        name: flavor.name, name_pt: flavor.name_pt, name_en: flavor.name_en,
+        options: opts
+      })
+    }
+  }
+  res.json(result)
+})
+
+app.put('/api/dishes/:id/flavors', auth(['admin', 'cashier']), (req, res) => {
+  const dishId = parseInt(req.params.id)
+  const { flavors } = req.body  // Array of { flavor_id, required, sort_order }
+  if (!Array.isArray(flavors)) return res.status(400).json({ message: 'flavors must be an array' })
+  // Remove existing associations
+  const { removeWhere } = require('./db')
+  removeWhere('dish_flavors', df => df.dish_id === dishId)
+  // Add new associations
+  for (let i = 0; i < flavors.length; i++) {
+    const f = flavors[i]
+    insert('dish_flavors', {
+      dish_id: dishId, flavor_id: parseInt(f.flavor_id),
+      required: f.required ? 1 : 0, sort_order: f.sort_order ?? i
+    })
+  }
+  res.json({ success: true })
+})
+
 // ── Orders ────────────────────────────────────────────
 
 app.get('/api/orders/export', auth(['admin', 'cashier']), (req, res) => {
@@ -299,20 +404,62 @@ app.post('/api/orders', auth(), (req, res) => {
       cashier_id: null, created_at: new Date().toISOString(), paid_at: null
     })
     for (const item of items) {
+      const flavorsStr = item.flavors
+        ? (typeof item.flavors === 'string' ? item.flavors : JSON.stringify(item.flavors))
+        : ''
       insert('order_items', {
         order_id: order.id, dish_id: item.dish_id || item.dishId, dish_name: item.name,
-        dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty
+        dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty,
+        kitchen_status: 'new', printed_qty: 0, item_status: 'normal',
+        flavors: flavorsStr
       })
     }
   })
+
+  // Kitchen print for pending orders
+  const finalStatus = status || 'pending'
+  let kitchenPrint = { success: false }
+  if (finalStatus === 'pending') {
+    try {
+      order.items = find('order_items', oi => oi.order_id === order.id)
+      for (const item of order.items) {
+        const dish = findOne('dishes', d => d.id === item.dish_id)
+        if (dish) {
+          item.dish_name_pt = dish.name_pt
+          item.dish_name_en = dish.name_en
+          item.remark = dish.remark
+          item.remark_pt = dish.remark_pt
+          item.remark_en = dish.remark_en
+        }
+      }
+      const lang = req.body.lang || 'zh'
+      const ticketLines = generateKitchenTicket(order, 'new', order.items, lang)
+      const ticketText = formatReceiptText(ticketLines)
+      kitchenPrint = printKitchen(ticketText)
+      kitchenPrint.ticket_text = ticketText
+      if (kitchenPrint.success) {
+        for (const item of order.items) {
+          update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
+        }
+      }
+    } catch (e) {
+      kitchenPrint = { success: false, error: e.message }
+      console.error('[kitchen-print] Exception on order create:', e.message)
+    }
+  }
+
   broadcast('order_created', { id: order.id, table: order.table_number, waiter: req.user.name })
-  res.json({ id: order.id })
+  res.json({ id: order.id, kitchen_print: kitchenPrint })
 })
 
 app.put('/api/orders/:id', auth(), (req, res) => {
   const { tableNumber, items, totalAmount, status } = req.body
   if (!tableNumber || !items?.length) return res.status(400).json({ error: 'order_table_required' })
   if (totalAmount === undefined || totalAmount === null) return res.status(400).json({ error: 'order_amount_required' })
+  // Only allow editing pending or draft orders
+  const existing = findOne('orders', o => o.id === parseInt(req.params.id))
+  if (!existing) return res.status(404).json({ error: 'order_not_found' })
+  if (existing.status !== 'pending' && existing.status !== 'draft') return res.status(400).json({ error: 'order_not_editable' })
   runTransaction(() => {
     const orderFields = {
       table_number: tableNumber, total_amount: Number(totalAmount)
@@ -322,9 +469,14 @@ app.put('/api/orders/:id', auth(), (req, res) => {
     // Replace order items
     removeWhere('order_items', oi => oi.order_id === parseInt(req.params.id))
     for (const item of items) {
+      const flavorsStr = item.flavors
+        ? (typeof item.flavors === 'string' ? item.flavors : JSON.stringify(item.flavors))
+        : ''
       insert('order_items', {
         order_id: parseInt(req.params.id), dish_id: item.dish_id || item.dishId, dish_name: item.name,
-        dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty
+        dish_price: Number(item.price), quantity: item.qty, subtotal: item.price * item.qty,
+        kitchen_status: 'new', printed_qty: 0, item_status: 'normal',
+        flavors: flavorsStr
       })
     }
   })
@@ -342,14 +494,221 @@ app.post('/api/orders/:id/submit', auth(), (req, res) => {
     if (existing) return res.status(409).json({ error: 'table_conflict', orderId: existing.id })
   }
   update('orders', req.params.id, { status: 'pending' })
+
+  // Kitchen print
+  const lang = req.body.lang || 'zh'
+  let kitchenPrint = { success: false }
+  try {
+    order.items = find('order_items', oi => oi.order_id === order.id)
+    // Enrich items with multilingual dish names
+    for (const item of order.items) {
+      const dish = findOne('dishes', d => d.id === item.dish_id)
+      if (dish) {
+        item.dish_name_pt = dish.name_pt
+        item.dish_name_en = dish.name_en
+        item.remark = dish.remark
+        item.remark_pt = dish.remark_pt
+        item.remark_en = dish.remark_en
+      }
+    }
+    const ticketLines = generateKitchenTicket(order, 'new', order.items, lang)
+    const ticketText = formatReceiptText(ticketLines)
+    kitchenPrint = printKitchen(ticketText)
+    kitchenPrint.ticket_text = ticketText
+    // Mark all items as printed
+    if (kitchenPrint.success) {
+      for (const item of order.items) {
+        update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
+      }
+    }
+  } catch (e) {
+    kitchenPrint = { success: false, error: e.message }
+    console.error('[kitchen-print] Exception:', e.message)
+  }
+
   broadcast('order_submitted', { id: parseInt(req.params.id), table: order.table_number })
-  res.json({ success: true })
+  res.json({ success: true, kitchen_print: kitchenPrint })
 })
 
 app.post('/api/orders/:id/cancel', auth(['admin', 'cashier']), (req, res) => {
-  update('orders', req.params.id, { status: 'cancelled' })
+  const order = findOne('orders', o => o.id === parseInt(req.params.id))
+  if (!order) return res.status(404).json({ error: 'order_not_found' })
+  if (order.status === 'completed') return res.status(400).json({ error: 'order_already_completed' })
+  update('orders', parseInt(req.params.id), { status: 'cancelled' })
   broadcast('order_cancelled', { id: parseInt(req.params.id) })
   res.json({ success: true })
+})
+
+// ── Kitchen: Add items to existing order ──────────────
+
+app.post('/api/orders/:id/add-items', auth(), (req, res) => {
+  const orderId = parseInt(req.params.id)
+  const order = findOne('orders', o => o.id === orderId)
+  if (!order) return res.status(404).json({ error: 'order_not_found' })
+  if (order.status !== 'pending') return res.status(400).json({ error: 'order_must_be_pending' })
+
+  const { items, lang } = req.body
+  if (!items?.length) return res.status(400).json({ error: 'items_required' })
+
+  const newItems = []
+  let addedAmount = 0
+
+  runTransaction(() => {
+    for (const item of items) {
+      const qty = item.qty || 1
+      const price = Number(item.price)
+      const subtotal = price * qty
+      addedAmount += subtotal
+      const flavorsStr = item.flavors
+        ? (typeof item.flavors === 'string' ? item.flavors : JSON.stringify(item.flavors))
+        : ''
+      const inserted = insert('order_items', {
+        order_id: orderId, dish_id: item.dish_id || item.dishId,
+        dish_name: item.name, dish_price: price,
+        quantity: qty, subtotal,
+        kitchen_status: 'new', printed_qty: 0, item_status: 'normal',
+        flavors: flavorsStr
+      })
+      newItems.push({ ...inserted, print_qty: qty })
+    }
+    // Update order total
+    update('orders', orderId, { total_amount: Number(order.total_amount) + addedAmount })
+  })
+
+  // Enrich new items with multilingual names for kitchen ticket
+  for (const item of newItems) {
+    const dish = findOne('dishes', d => d.id === item.dish_id)
+    if (dish) {
+      item.dish_name_pt = dish.name_pt
+      item.dish_name_en = dish.name_en
+      item.remark = dish.remark
+      item.remark_pt = dish.remark_pt
+      item.remark_en = dish.remark_en
+    }
+  }
+
+  // Print addon kitchen ticket
+  let kitchenPrint = { success: false }
+  try {
+    const ticketLines = generateKitchenTicket(order, 'addon', newItems, lang || 'zh')
+    const ticketText = formatReceiptText(ticketLines)
+    kitchenPrint = printKitchen(ticketText)
+    kitchenPrint.ticket_text = ticketText
+    if (kitchenPrint.success) {
+      for (const item of newItems) {
+        update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
+      }
+    }
+  } catch (e) {
+    kitchenPrint = { success: false, error: e.message }
+    console.error('[kitchen-addon] Exception:', e.message)
+  }
+
+  broadcast('order_updated', { id: orderId, table: order.table_number })
+  res.json({ success: true, added_count: newItems.length, kitchen_print: kitchenPrint })
+})
+
+// ── Kitchen: Cancel single item ──────────────────────
+
+app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (req, res) => {
+  const orderId = parseInt(req.params.id)
+  const order = findOne('orders', o => o.id === orderId)
+  if (!order) return res.status(404).json({ error: 'order_not_found' })
+
+  const { item_id, cancel_qty, reason, lang } = req.body
+  if (!item_id) return res.status(400).json({ error: 'item_id_required' })
+
+  const item = findOne('order_items', oi => oi.id === parseInt(item_id) && oi.order_id === orderId)
+  if (!item) return res.status(404).json({ error: 'item_not_found' })
+  if (item.item_status === 'cancelled') return res.status(400).json({ error: 'item_already_cancelled' })
+
+  const qtyToCancel = Math.min(cancel_qty || item.quantity, item.quantity)
+
+  runTransaction(() => {
+    if (qtyToCancel >= item.quantity) {
+      // Cancel entire item
+      update('order_items', item.id, { item_status: 'cancelled', kitchen_status: 'cancel_pending' })
+    } else {
+      // Partial cancel: reduce quantity
+      const newQty = item.quantity - qtyToCancel
+      const newSubtotal = item.dish_price * newQty
+      update('order_items', item.id, { quantity: newQty, subtotal: newSubtotal, kitchen_status: 'cancel_pending' })
+    }
+    // Recalculate order total
+    const allItems = find('order_items', oi => oi.order_id === orderId)
+    let newTotal = 0
+    for (const oi of allItems) {
+      if (oi.item_status !== 'cancelled') newTotal += oi.subtotal
+    }
+    update('orders', orderId, { total_amount: newTotal })
+  })
+
+  // Print cancel kitchen ticket
+  const cancelItem = {
+    ...item,
+    print_qty: qtyToCancel,
+    cancel_reason: reason || '',
+  }
+  // Enrich with multilingual names
+  const dish = findOne('dishes', d => d.id === item.dish_id)
+  if (dish) {
+    cancelItem.dish_name_pt = dish.name_pt
+    cancelItem.dish_name_en = dish.name_en
+  }
+
+  let kitchenPrint = { success: false }
+  try {
+    const ticketLines = generateKitchenTicket(order, 'cancel', [cancelItem], lang || 'zh')
+    const ticketText = formatReceiptText(ticketLines)
+    kitchenPrint = printKitchen(ticketText)
+    kitchenPrint.ticket_text = ticketText
+    if (kitchenPrint.success) {
+      update('order_items', item.id, { kitchen_status: 'cancelled' })
+    }
+  } catch (e) {
+    kitchenPrint = { success: false, error: e.message }
+    console.error('[kitchen-cancel] Exception:', e.message)
+  }
+
+  broadcast('order_item_cancelled', { orderId, itemId: item.id })
+  res.json({ success: true, cancelled_qty: qtyToCancel, kitchen_print: kitchenPrint })
+})
+
+// ── Kitchen: Manual reprint ──────────────────────────
+
+app.post('/api/orders/:id/kitchen-reprint', auth(['admin', 'cashier']), (req, res) => {
+  const orderId = parseInt(req.params.id)
+  const order = findOne('orders', o => o.id === orderId)
+  if (!order) return res.status(404).json({ error: 'order_not_found' })
+
+  const { lang } = req.body || {}
+  order.items = find('order_items', oi => oi.order_id === orderId && oi.item_status !== 'cancelled')
+  if (!order.items.length) return res.status(400).json({ error: 'no_printable_items' })
+
+  // Enrich items
+  for (const item of order.items) {
+    const dish = findOne('dishes', d => d.id === item.dish_id)
+    if (dish) {
+      item.dish_name_pt = dish.name_pt
+      item.dish_name_en = dish.name_en
+      item.remark = dish.remark
+      item.remark_pt = dish.remark_pt
+      item.remark_en = dish.remark_en
+    }
+  }
+
+  let kitchenPrint = { success: false }
+  try {
+    const ticketLines = generateKitchenTicket(order, 'reprint', order.items, lang || 'zh')
+    const ticketText = formatReceiptText(ticketLines)
+    kitchenPrint = printKitchen(ticketText)
+    kitchenPrint.ticket_text = ticketText
+  } catch (e) {
+    kitchenPrint = { success: false, error: e.message }
+    console.error('[kitchen-reprint] Exception:', e.message)
+  }
+
+  res.json({ success: kitchenPrint.success, kitchen_print: kitchenPrint })
 })
 
 // Delete order (admin only)
@@ -369,6 +728,9 @@ app.delete('/api/orders/:id', auth(['admin']), (req, res) => {
 app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
   const { paymentMethod, cashReceived, change, lang } = req.body
   const orderId = parseInt(req.params.id)
+  const orderCheck = findOne('orders', o => o.id === orderId)
+  if (!orderCheck) return res.status(404).json({ error: 'order_not_found' })
+  if (orderCheck.status !== 'pending') return res.status(400).json({ error: 'order_not_pending' })
   update('orders', orderId, {
     status: 'completed', payment_method: paymentMethod,
     cash_received: cashReceived || null, change_amount: change || null,
@@ -392,6 +754,7 @@ app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
       const receiptLines = generateReceipt(order, lang || 'zh')
       const receiptText = formatReceiptText(receiptLines)
       printResult = printText(receiptText)
+      printResult.ticket_text = receiptText
     }
   } catch (e) {
     printResult = { success: false, error: e.message }
@@ -425,15 +788,19 @@ app.post('/api/orders/:id/print', auth(['admin', 'cashier']), (req, res) => {
   try {
     const receiptLines = generateReceipt(order, req.query.lang || 'zh')
     const receiptText = formatReceiptText(receiptLines)
-    printText(receiptText)
-    res.json({ success: true, printer: PRINTER_NAME || '(Default Printer)' })
+    const printRes = printText(receiptText)
+    res.json({ success: true, printer: PRINTER_NAME || '(Default Printer)', ticket_text: receiptText, ...printRes })
   } catch (e) {
     res.status(500).json({ error: 'print_failed', detail: e.message })
   }
 })
 
 app.get('/api/printers', auth(['admin', 'cashier']), (req, res) => {
-  res.json({ printers: listPrinters(), current: PRINTER_NAME || '(Default Printer)' })
+  res.json({
+    printers: listPrinters(),
+    current: PRINTER_NAME || '(Default Printer)',
+    kitchen: KITCHEN_PRINTER_NAME || PRINTER_NAME || '(Default Printer)',
+  })
 })
 
 // ── Employees ─────────────────────────────────────────
@@ -673,13 +1040,30 @@ app.use((err, req, res, next) => {
 })
 
 function getLanIp() {
+  // Manual override via env var
+  if (process.env.LAN_IP) return process.env.LAN_IP
   const nets = os.networkInterfaces()
+  const candidates = []
   for (const name of Object.keys(nets)) {
     for (const net of nets[name]) {
-      if (net.family === 'IPv4' && !net.internal) return net.address
+      if (net.family !== 'IPv4' || net.internal) continue
+      // Skip link-local (169.254.x.x) and loopback
+      if (net.address.startsWith('169.254.') || net.address.startsWith('127.')) continue
+      candidates.push({ name, address: net.address })
     }
   }
-  return 'localhost'
+  // Prefer 192.168.x.x (typical LAN), then 10.x.x.x, then 172.16-31.x.x
+  const lan = candidates.find(c => c.address.startsWith('192.168.'))
+  if (lan) return lan.address
+  const priv = candidates.find(c => c.address.startsWith('10.'))
+  if (priv) return priv.address
+  const privB = candidates.find(c => {
+    const parts = c.address.split('.').map(Number)
+    return parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31
+  })
+  if (privB) return privB.address
+  // Fallback to first candidate or localhost
+  return candidates[0]?.address || 'localhost'
 }
 
 // Serve built frontend (production)
@@ -714,3 +1098,12 @@ app.get('*', (req, res) => {
     console.log('')
   })
 })()
+
+// Graceful shutdown: persist in-memory DB before exit
+function gracefulShutdown(signal) {
+  console.log(`\n[${signal}] Shutting down, saving database...`)
+  try { save() } catch (e) { console.error('Save on shutdown failed:', e.message) }
+  process.exit(0)
+}
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))

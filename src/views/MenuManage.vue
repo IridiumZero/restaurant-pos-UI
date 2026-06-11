@@ -36,42 +36,78 @@
       <div v-if="!loading && !filteredDishes.length" class="empty-hint">{{ t('menu.noDish') }}</div>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? t('menu.editDish') : t('menu.addDish')" width="680px" :close-on-click-modal="false" class="dish-dialog">
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="90px" class="dish-form">
-        <el-form-item :label="t('menu.dishName')" prop="name"><el-input v-model="form.name" :placeholder="t('menu.placeholderName')" /></el-form-item>
-        <el-form-item :label="t('menu.dishNamePt')"><el-input v-model="form.name_pt" :placeholder="t('menu.placeholderNamePt')" /></el-form-item>
-        <el-form-item :label="t('menu.dishNameEn')"><el-input v-model="form.name_en" :placeholder="t('menu.placeholderNameEn')" /></el-form-item>
-        <el-form-item :label="t('menu.dishCategory')" prop="category">
-          <el-select v-model="form.category" style="width:100%" filterable multiple :placeholder="t('menu.placeholderCategory')">
-            <el-option v-for="cat in categoryList" :key="cat.id" :label="getCategoryName(cat) || cat.name" :value="cat.name" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('menu.dishPrice')" prop="price"><el-input-number v-model="form.price" :min="1" :precision="2" :step="10" style="width:100%" /> <span style="margin-left:8px;color:#909399">{{ t('currency.symbol') }}</span></el-form-item>
-        <el-form-item :label="t('menu.dishRemark')"><el-input v-model="form.remark" :placeholder="t('menu.dishRemark')" /></el-form-item>
-        <el-form-item :label="t('menu.dishRemarkPt')"><el-input v-model="form.remark_pt" :placeholder="t('menu.dishRemarkPt')" /></el-form-item>
-        <el-form-item :label="t('menu.dishRemarkEn')"><el-input v-model="form.remark_en" :placeholder="t('menu.dishRemarkEn')" /></el-form-item>
+    <el-dialog v-model="dialogVisible" :title="isEdit ? t('menu.editDish') : t('menu.addDish')" width="900px" :close-on-click-modal="false" class="dish-dialog">
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="80px" class="dish-form">
+        <div class="form-row form-row-3">
+          <el-form-item :label="t('menu.dishName')" prop="name"><el-input v-model="form.name" :placeholder="t('menu.placeholderName')" /></el-form-item>
+          <el-form-item :label="t('menu.dishNamePt')"><el-input v-model="form.name_pt" :placeholder="t('menu.placeholderNamePt')" /></el-form-item>
+          <el-form-item :label="t('menu.dishNameEn')"><el-input v-model="form.name_en" :placeholder="t('menu.placeholderNameEn')" /></el-form-item>
+        </div>
+        <div class="form-row form-row-2">
+          <el-form-item :label="t('menu.dishCategory')" prop="category">
+            <el-select v-model="form.category" style="width:100%" filterable multiple :placeholder="t('menu.placeholderCategory')">
+              <el-option v-for="cat in categoryList" :key="cat.id" :label="getCategoryName(cat) || cat.name" :value="cat.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('menu.dishPrice')" prop="price"><div class="price-row"><el-input-number v-model="form.price" :min="1" :precision="2" :step="10" style="flex:1;min-width:0" /> <span class="price-unit">{{ t('currency.symbol') }}</span></div></el-form-item>
+        </div>
+        <div class="form-row form-row-1">
+          <el-form-item :label="t('menu.dishRemark')"><el-input v-model="form.remark" :placeholder="t('menu.dishRemark')" /></el-form-item>
+        </div>
+        <div class="form-row form-row-1">
+          <el-form-item :label="t('menu.dishRemarkPt')"><el-input v-model="form.remark_pt" :placeholder="t('menu.dishRemarkPt')" /></el-form-item>
+        </div>
+        <div class="form-row form-row-1">
+          <el-form-item :label="t('menu.dishRemarkEn')"><el-input v-model="form.remark_en" :placeholder="t('menu.dishRemarkEn')" /></el-form-item>
+        </div>
 
-        <el-form-item :label="t('menu.dishImage')" prop="image">
-          <div class="image-upload">
-            <input type="file" accept="image/*" @change="handleImageSelect" ref="fileInput" style="display:none" />
-            <div class="image-preview" v-if="imagePreview">
-              <img :src="imageUrl(imagePreview)" />
-              <el-button size="small" type="danger" circle class="image-clear-btn" @click="clearImage">
-                <el-icon><Close /></el-icon>
-              </el-button>
-            </div>
-            <el-button v-else @click="fileInput?.click()" :loading="imageUploading">
-              <el-icon><Plus /></el-icon> {{ t('common.add') }}
-            </el-button>
+        <!-- 口味配置 / Flavor Options -->
+        <div class="flavor-section" v-if="flavorTemplates.length">
+          <div class="flavor-section-header">
+            <span class="flavor-section-title">{{ t('menu.flavorTitle') }}</span>
+            <span class="flavor-section-hint">{{ enabledFlavorCount }} / {{ flavorTemplates.length }} {{ t('menu.flavorEnabled') }}</span>
           </div>
-        </el-form-item>
-        <el-form-item :label="t('menu.dishStatus')" prop="status">
-          <el-select v-model="form.status" style="width:100%">
-            <el-option :label="t('menu.active')" value="active" />
-            <el-option :label="t('menu.inactive')" value="inactive" />
-            <el-option :label="t('menu.soldOut')" value="sold_out" />
-          </el-select>
-        </el-form-item>
+          <div class="flavor-card-list">
+            <div v-for="flavor in flavorTemplates" :key="flavor.id" class="flavor-card" :class="{ 'flavor-card-active': isFlavorEnabled(flavor.id) }">
+              <div class="flavor-card-header">
+                <el-switch v-model="flavorState[flavor.id].enabled" size="small" />
+                <span class="flavor-card-name">{{ getFlavorName(flavor) }}</span>
+                <el-checkbox v-model="flavorState[flavor.id].required" :disabled="!isFlavorEnabled(flavor.id)" size="small">{{ t('menu.flavorRequired') }}</el-checkbox>
+              </div>
+              <div class="flavor-card-options" v-if="flavor.options && flavor.options.length">
+                <el-tag v-for="opt in flavor.options" :key="opt" size="small" type="info" class="flavor-option-tag">{{ localizeOption(opt) }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row form-row-2">
+          <el-form-item :label="t('menu.dishImage')" prop="image">
+            <div class="image-upload-multi">
+              <input type="file" accept="image/*" @change="handleImageSelect" ref="fileInput" style="display:none" multiple />
+              <div v-for="(img, idx) in imageList" :key="idx" class="image-thumb">
+                <img :src="imageUrl(img)" />
+                <span v-if="idx === 0" class="image-cover-tag">{{ t('menu.coverImage') }}</span>
+                <el-button size="small" type="danger" circle class="image-del-btn" @click="removeImage(idx)">
+                  <el-icon><Close /></el-icon>
+                </el-button>
+              </div>
+              <div class="image-add-btn" @click="fileInput?.click()" v-if="!imageUploading && imageList.length < 4">
+                <el-icon style="font-size:24px;color:#909399"><Plus /></el-icon>
+              </div>
+              <div class="image-add-btn" v-else-if="imageUploading">
+                <el-icon class="is-loading" style="font-size:20px;color:#409eff"><Loading /></el-icon>
+              </div>
+            </div>
+          </el-form-item>
+          <el-form-item :label="t('menu.dishStatus')" prop="status">
+            <el-select v-model="form.status" style="width:100%">
+              <el-option :label="t('menu.active')" value="active" />
+              <el-option :label="t('menu.inactive')" value="inactive" />
+              <el-option :label="t('menu.soldOut')" value="sold_out" />
+            </el-select>
+          </el-form-item>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">{{ t('common.cancel') }}</el-button>
@@ -116,17 +152,66 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Edit, Delete, Close, Check, FolderOpened, Top, Bottom } from '@element-plus/icons-vue'
-import { useI18n, getDishName, getCategoryName, getDishRemark } from '../i18n'
+import { Plus, Edit, Delete, Close, Check, FolderOpened, Top, Bottom, Loading } from '@element-plus/icons-vue'
+import { useI18n, getDishName, getCategoryName, getDishRemark, getFlavorName, localizeOption } from '../i18n'
 import { api } from '../api'
 
 const { t, locale, formatCurrency } = useI18n()
 const serverBase = localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000'
 const dishes = ref([])
 const dialogVisible = ref(false), isEdit = ref(false), editingId = ref(null), formRef = ref(null), loading = ref(false), saving = ref(false), filterCategory = ref('全部')
-const imagePreview = ref(''), imageUploading = ref(false), fileInput = ref(null)
+const imageList = ref([]), imageUploading = ref(false), fileInput = ref(null)
 const form = reactive({ name: '', name_pt: '', name_en: '', category: [], price: 0, remark: '', remark_pt: '', remark_en: '', status: 'active', image: '' })
 const rules = { name: [{ required: true }], category: [{ required: true }], price: [{ required: true }] }
+
+// Flavor configuration
+const flavorTemplates = ref([])
+const flavorState = reactive({}) // flavorState[flavorId] = { enabled: bool, required: bool }
+
+const enabledFlavorCount = computed(() => {
+  return Object.values(flavorState).filter(s => s.enabled).length
+})
+
+function isFlavorEnabled(flavorId) {
+  return flavorState[flavorId]?.enabled === true
+}
+
+function resetFlavorState() {
+  Object.keys(flavorState).forEach(k => delete flavorState[k])
+}
+
+function initFlavorStateFromTemplates(templates) {
+  templates.forEach(f => {
+    if (!flavorState[f.id]) {
+      flavorState[f.id] = { enabled: false, required: false }
+    }
+  })
+}
+
+async function loadFlavorTemplates() {
+  try {
+    flavorTemplates.value = await api.getFlavors()
+    initFlavorStateFromTemplates(flavorTemplates.value)
+  } catch (e) { console.error('加载口味模板失败:', e) }
+}
+
+async function loadDishFlavors(dishId) {
+  try {
+    const assigned = await api.getDishFlavors(dishId)
+    assigned.forEach(af => {
+      if (flavorState[af.flavor_id]) {
+        flavorState[af.flavor_id].enabled = true
+        flavorState[af.flavor_id].required = !!af.required
+      }
+    })
+  } catch (e) { console.error('加载菜品口味失败:', e) }
+}
+
+function getEnabledFlavors() {
+  return flavorTemplates.value
+    .filter(f => flavorState[f.id]?.enabled)
+    .map((f, idx) => ({ flavor_id: f.id, required: flavorState[f.id].required, sort_order: idx }))
+}
 
 const userRole = ref((() => { try { return JSON.parse(localStorage.getItem('user') || '{}').role || '' } catch { return '' } })())
 const isAdmin = computed(() => userRole.value === 'admin')
@@ -169,31 +254,47 @@ async function loadCategories() {
 }
 
 async function load() { loading.value = true; try { dishes.value = await api.getDishes() } catch (e) { console.error('加载菜品失败:', e) }; loading.value = false }
-function showAddDialog() { isEdit.value = false; editingId.value = null; form.name = ''; form.name_pt = ''; form.name_en = ''; form.category = []; form.price = 0; form.remark = ''; form.remark_pt = ''; form.remark_en = ''; form.status = 'active'; form.image = ''; imagePreview.value = ''; dialogVisible.value = true; setTimeout(() => formRef.value?.resetFields(), 0) }
-function showEditDialog(row) { isEdit.value = true; editingId.value = row.id; form.name = row.name; form.name_pt = row.name_pt || ''; form.name_en = row.name_en || ''; form.category = row.category ? row.category.split(',') : []; form.price = row.price; form.remark = row.remark || ''; form.remark_pt = row.remark_pt || ''; form.remark_en = row.remark_en || ''; form.status = row.status || 'active'; form.image = row.image || ''; imagePreview.value = row.image || ''; dialogVisible.value = true }
+function showAddDialog() { isEdit.value = false; editingId.value = null; form.name = ''; form.name_pt = ''; form.name_en = ''; form.category = []; form.price = 0; form.remark = ''; form.remark_pt = ''; form.remark_en = ''; form.status = 'active'; form.image = ''; imageList.value = []; resetFlavorState(); loadFlavorTemplates(); dialogVisible.value = true; setTimeout(() => formRef.value?.resetFields(), 0) }
+async function showEditDialog(row) { isEdit.value = true; editingId.value = row.id; form.name = row.name; form.name_pt = row.name_pt || ''; form.name_en = row.name_en || ''; form.category = row.category ? row.category.split(',') : []; form.price = row.price; form.remark = row.remark || ''; form.remark_pt = row.remark_pt || ''; form.remark_en = row.remark_en || ''; form.status = row.status || 'active'; form.image = row.image || ''; imageList.value = parseImages(row); resetFlavorState(); await loadFlavorTemplates(); await loadDishFlavors(row.id); dialogVisible.value = true }
+
+function parseImages(row) {
+  if (row.images) {
+    try {
+      const arr = typeof row.images === 'string' ? JSON.parse(row.images) : row.images
+      if (Array.isArray(arr) && arr.length) return arr
+    } catch {}
+  }
+  return row.image ? [row.image] : []
+}
 
 async function handleImageSelect(e) {
-  const file = e.target.files?.[0]
-  if (!file) return
+  const files = Array.from(e.target.files || [])
+  if (!files.length) return
+  const remaining = 4 - imageList.value.length
+  const toUpload = files.slice(0, remaining)
+  if (files.length > remaining) {
+    ElMessage.warning(t('menu.imageLimit', '最多上传4张图片'))
+  }
+  if (!toUpload.length) { if (fileInput.value) fileInput.value.value = ''; return }
   imageUploading.value = true
-  try {
-    const base64 = await new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-    const res = await api.uploadImage(base64)
-    form.image = res.path
-    imagePreview.value = res.path
-  } catch (e) { ElMessage.error(e.message) }
+  for (const file of toUpload) {
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+      const res = await api.uploadImage(base64)
+      imageList.value.push(res.path)
+    } catch (err) { ElMessage.error(err.message) }
+  }
   imageUploading.value = false
   if (fileInput.value) fileInput.value.value = ''
 }
 
-function clearImage() {
-  form.image = ''
-  imagePreview.value = ''
+function removeImage(idx) {
+  imageList.value.splice(idx, 1)
 }
 
 async function handleSave() {
@@ -201,9 +302,11 @@ async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false); if (!valid) return
   saving.value = true
   try {
-    const data = { name: form.name, name_pt: form.name_pt, name_en: form.name_en, category: form.category, price: form.price, remark: form.remark, remark_pt: form.remark_pt, remark_en: form.remark_en, status: form.status, image: form.image }
-    if (isEdit.value) { await api.updateDish(editingId.value, data); ElMessage.success(t('menu.editSuccess')) }
-    else { await api.addDish(data); ElMessage.success(t('menu.addSuccess')) }
+    const data = { name: form.name, name_pt: form.name_pt, name_en: form.name_en, category: Array.isArray(form.category) ? form.category.join(',') : form.category, price: form.price, remark: form.remark, remark_pt: form.remark_pt, remark_en: form.remark_en, status: form.status, image: imageList.value[0] || '', images: JSON.stringify(imageList.value) }
+    let dishId = editingId.value
+    if (isEdit.value) { await api.updateDish(dishId, data); ElMessage.success(t('menu.editSuccess')) }
+    else { const res = await api.addDish(data); dishId = res?.id || res; ElMessage.success(t('menu.addSuccess')) }
+    if (dishId) { await api.setDishFlavors(dishId, getEnabledFlavors()) }
     dialogVisible.value = false; await load()
   } catch (e) { ElMessage.error(e.message) }
   saving.value = false
@@ -606,44 +709,6 @@ onMounted(() => { load(); loadCategories() })
   font-weight: 700;
 }
 
-.image-upload { 
-  display: flex;
-  align-items: center;
-}
-
-.image-preview { 
-  position: relative; 
-  width: 140px;
-  height: 140px;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 2px solid #e4e7ed;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
-}
-
-.image-preview:hover {
-  border-color: #667eea;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
-}
-
-.image-preview img { 
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.image-clear-btn { 
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  transition: all 0.3s ease;
-}
-
-.image-clear-btn:hover {
-  transform: scale(1.1);
-}
-
 .category-add-row { 
   display: flex;
   gap: 8px;
@@ -777,31 +842,59 @@ onMounted(() => { load(); loadCategories() })
    Dialog Optimization
    ======================================== */
 
-/* Dialog container */
+/* Horizontal form rows */
+.form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 0;
+  align-items: flex-start;
+}
+
+.price-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.price-unit {
+  color: #909399;
+  font-size: 13px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.form-row :deep(.el-form-item) {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 14px !important;
+}
+
 /* Form styling */
 .dish-form {
-  background: #ffffff !important;
-  padding: 24px !important;
-  border-radius: 12px !important;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06) !important;
+  padding: 16px 20px 4px !important;
 }
 
 /* Form item spacing */
 .dish-form :deep(.el-form-item) {
-  margin-bottom: 18px !important;
+  margin-bottom: 14px !important;
 }
 
-.dish-form :deep(.el-form-item:last-child) {
-  margin-bottom: 0 !important;
+.dish-form :deep(.el-form-item__content) {
+  min-width: 0 !important;
 }
 
-/* Form label */
+/* Form label - right aligned for neat columns */
 .dish-form :deep(.el-form-item__label) {
   font-weight: 600 !important;
   color: #4a5568 !important;
   font-size: 13px !important;
   line-height: 32px !important;
-  letter-spacing: 0.3px !important;
+  text-align: right !important;
+  padding-right: 10px !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
 }
 
 .dish-form :deep(.el-form-item__label::before) {
@@ -910,49 +1003,74 @@ onMounted(() => { load(); loadCategories() })
   transform: scale(0.95) !important;
 }
 
-/* Image upload */
-.image-upload {
+/* Image upload - multi */
+.image-upload-multi {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
 }
 
-.image-preview {
+.image-thumb {
   position: relative;
-  width: 120px;
-  height: 120px;
-  border-radius: 12px;
+  width: 68px;
+  height: 68px;
+  border-radius: 8px;
   overflow: hidden;
   border: 2px solid #e2e8f0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s ease;
+  flex-shrink: 0;
 }
 
-.image-preview:hover {
-  border-color: #667eea;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.25);
-  transform: scale(1.02);
-}
-
-.image-preview img {
+.image-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.image-clear-btn {
+.image-cover-tag {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  background: rgba(255, 255, 255, 0.95) !important;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
-  transition: all 0.3s ease;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(102, 126, 234, 0.85);
+  color: #fff;
+  font-size: 10px;
+  text-align: center;
+  padding: 1px 0;
+  line-height: 1.3;
 }
 
-.image-clear-btn:hover {
-  transform: scale(1.15) rotate(90deg) !important;
-  background: #ff416c !important;
-  color: #ffffff !important;
+.image-del-btn {
+  position: absolute !important;
+  top: 2px;
+  right: 2px;
+  width: 18px !important;
+  height: 18px !important;
+  padding: 0 !important;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.image-thumb:hover .image-del-btn {
+  opacity: 1;
+}
+
+.image-add-btn {
+  width: 68px;
+  height: 68px;
+  border-radius: 8px;
+  border: 2px dashed #dcdfe6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.image-add-btn:hover {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.04);
 }
 
 /* Responsive */
@@ -963,16 +1081,22 @@ onMounted(() => { load(); loadCategories() })
   }
   
   .dish-form {
-    padding: 16px !important;
+    padding: 12px 14px 4px !important;
   }
   
   .dish-dialog :deep(.el-dialog__body) {
-    padding: 16px !important;
+    padding: 12px !important;
   }
   
-  .image-preview {
-    width: 100px;
-    height: 100px;
+  .form-row {
+    flex-direction: column;
+    gap: 0;
+  }
+  
+  .image-thumb,
+  .image-add-btn {
+    width: 56px;
+    height: 56px;
   }
 }
 
@@ -1028,5 +1152,113 @@ onMounted(() => { load(); loadCategories() })
   background: #ffffff !important;
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* ========================================
+   Flavor Configuration Section
+   ======================================== */
+
+.flavor-section {
+  margin: 0 0 14px 0;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.04) 0%, rgba(118, 75, 162, 0.04) 100%);
+  border-radius: 10px;
+  border: 1px solid #e4e7ed;
+}
+
+.flavor-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.flavor-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #303133;
+  letter-spacing: 0.3px;
+}
+
+.flavor-section-hint {
+  font-size: 12px;
+  color: #909399;
+  font-weight: 500;
+}
+
+.flavor-card-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.flavor-card {
+  padding: 8px 12px;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1.5px solid #e4e7ed;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: 1;
+  min-width: 180px;
+}
+
+.flavor-card:hover {
+  border-color: #cbd5e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.flavor-card-active {
+  border-color: #667eea;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.03) 0%, rgba(118, 75, 162, 0.03) 100%);
+  box-shadow: 0 2px 10px rgba(102, 126, 234, 0.12);
+}
+
+.flavor-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.flavor-card-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  min-width: 0;
+}
+
+.flavor-card-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #ebeef5;
+}
+
+.flavor-option-tag {
+  font-size: 12px !important;
+}
+
+.flavor-card-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.flavor-card-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.flavor-card-list::-webkit-scrollbar-thumb {
+  background: rgba(102, 126, 234, 0.25);
+  border-radius: 3px;
+}
+
+.flavor-card-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 126, 234, 0.45);
 }
 </style>

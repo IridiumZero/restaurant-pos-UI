@@ -36,6 +36,25 @@ export function getDishRemark(dish) {
   return dish.remark || ''
 }
 
+export function getFlavorName(flavor) {
+  if (!flavor) return ''
+  if (state.locale === 'pt' && flavor.name_pt) return flavor.name_pt
+  if (state.locale === 'en' && flavor.name_en) return flavor.name_en
+  return flavor.name || ''
+}
+
+/**
+ * Returns the localized portion of a trilingual option string (zh/pt/en).
+ * Falls back to the full string if no "/" separator found.
+ */
+export function localizeOption(optionStr) {
+  if (!optionStr || !optionStr.includes('/')) return optionStr || ''
+  const parts = optionStr.split('/')
+  if (state.locale === 'pt' && parts.length >= 2) return parts[1]
+  if (state.locale === 'en' && parts.length >= 3) return parts[2]
+  return parts[0]
+}
+
 export function useI18n() {
   const t = (key, arg1) => {
     const msg = messages[state.locale]

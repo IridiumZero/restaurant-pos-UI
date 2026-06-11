@@ -4,63 +4,56 @@ const path = require('path')
 const os = require('os')
 
 const PRINTER_NAME = process.env.PRINTER_NAME || ''
+const KITCHEN_PRINTER_NAME = process.env.KITCHEN_PRINTER_NAME || ''
 const CHARS_PER_LINE = parseInt(process.env.RECEIPT_WIDTH) || 20
 const PAPER_W_MM = parseInt(process.env.RECEIPT_WIDTH_MM) || 58
 const PAPER_H_MM = parseInt(process.env.RECEIPT_HEIGHT_MM) || 80
 
-// Receipt templates (zh / pt / en)
-const LANGS = {
-  zh: {
-    header:      '=== 结 账 单 ===',
-    orderNo:     '单号',
-    table:       '桌号',
-    waiter:      '服务员',
-    time:        '时间',
-    payment:     '支付方式',
-    total:       '合计',
-    received:    '收款',
-    change:      '找零',
-    thankYou:    '谢谢惠顾，欢迎再次光临！',
-    totalItems:  '菜品总数',
-    payments:    { '现金': '现金', 'POS机': 'POS机' },
-  },
-  pt: {
-    header:      '=== RECIBO ===',
-    orderNo:     'Pedido',
-    table:       'Mesa',
-    waiter:      'Garçom',
-    time:        'Hora',
-    payment:     'Pagamento',
-    total:       'Total',
-    received:    'Recebido',
-    change:      'Troco',
-    thankYou:    'Obrigado, volte sempre!',
-    totalItems:  'Total de Itens',
-    payments:    { '现金': 'Dinheiro', 'POS机': 'POS' },
-  },
-  en: {
-    header:      '=== RECEIPT ===',
-    orderNo:     'Order',
-    table:       'Table',
-    waiter:      'Waiter',
-    time:        'Time',
-    payment:     'Payment',
-    total:       'Total',
-    received:    'Received',
-    change:      'Change',
-    thankYou:    'Thank you, come again!',
-    totalItems:  'Total Items',
-    payments:    { '现金': 'Cash', 'POS机': 'POS' },
-  },
+// ── Bilingual template (zh + pt, always) ──────────────
+const BI = {
+  header:      '== 结账单/RECIBO ==',
+  orderNo:     '单号/Pedido',
+  table:       '桌号/Mesa',
+  waiter:      '服务员/Garçom',
+  time:        '时间/Hora',
+  payment:     '付款/Pagamento',
+  total:       '合计/Total',
+  received:    '收款/Recebido',
+  change:      '找零/Troco',
+  thankYou:    '谢谢惠顾! Obrigado!',
+  totalItems:  '总数/Itens',
+  payments:    { '现金': 'Dinheiro', 'POS机': 'POS', 'cash': 'Dinheiro', 'pos': 'POS' },
+}
+
+function isPaymentCash(method) {
+  return method === '现金' || method === 'cash'
+}
+
+// ── Kitchen bilingual template (zh + pt, always) ──────
+const KITCHEN_BI = {
+  new:      '=== 厨打/COZINHA ===',
+  addon:    '== 加菜/ADICIONAL ==',
+  cancel:   '== 退菜/CANCELADO ==',
+  reprint:  '== 补打/REIMPR ==',
+  orderNo:  '单号/Pedido',
+  table:    '桌号/Mesa',
+  waiter:   '服务员/Garçom',
+  time:     '时间/Hora',
+  qty:      '数量/Qtd',
+  remark:   '备注/Obs',
+  cancelReason: '原因/Motivo',
 }
 
 // ── Text width helpers ────────────────────────────────
 
 function charWidth(ch) {
   const code = ch.charCodeAt(0)
-  if (code >= 0x4E00 && code <= 0x9FFF) return 2
-  if (code >= 0x3000 && code <= 0x303F) return 2
-  if (code >= 0xFF00 && code <= 0xFFEF) return 2
+  if (code >= 0x4E00 && code <= 0x9FFF) return 2  // CJK Unified Ideographs
+  if (code >= 0x3400 && code <= 0x4DBF) return 2  // CJK Extension A
+  if (code >= 0x3000 && code <= 0x303F) return 2  // CJK Symbols/Punctuation
+  if (code >= 0xFF00 && code <= 0xFFEF) return 2  // Fullwidth Forms
+  if (code >= 0x2E80 && code <= 0x2FDF) return 2  // CJK Radicals
+  if (code >= 0xF900 && code <= 0xFAFF) return 2  // CJK Compatibility Ideographs
   return 1
 }
 
@@ -118,53 +111,146 @@ function formatLines(lines) {
 // ── Receipt generation ────────────────────────────────
 
 function generateReceipt(order, lang) {
-  const L = LANGS[lang] || LANGS.zh
+  // Always bilingual (zh + pt), lang param kept for API compatibility
   const W = CHARS_PER_LINE
   const pad = n => String(n).padStart(2, '0')
   const d = new Date()
   const time = `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-  const paymentName = L.payments[order.payment_method] || order.payment_method || '-'
+  const paymentZh = isPaymentCash(order.payment_method) ? '现金' : (order.payment_method === 'pos' ? 'POS机' : (order.payment_method || '-'))
+  const paymentPt = BI.payments[order.payment_method] || BI.payments[paymentZh] || paymentZh
 
   const sep = '-'.repeat(W)
 
   const lines = [
     '',
-    centerText(L.header, W),
+    centerText(BI.header, W),
     '',
-    padLR(`${L.orderNo}:#${order.id}`, `${L.table}:${order.table_number}`, W),
-    `${L.waiter}: ${order.waiter_name || '-'}`,
-    `${L.time}: ${time}`,
-    `${L.payment}: ${paymentName}`,
+    `${BI.orderNo}: #${order.id}`,
+    `${BI.table}: ${order.table_number}`,
+    `${BI.waiter}: ${order.waiter_name || '-'}`,
+    `${BI.time}: ${time}`,
+    `${BI.payment}: ${paymentZh} / ${paymentPt}`,
     sep,
   ]
 
   let totalQty = 0
   if (order.items && order.items.length) {
     for (const item of order.items) {
-      const name = (lang === 'pt' && item.dish_name_pt) ? item.dish_name_pt
-        : (lang === 'en' && item.dish_name_en) ? item.dish_name_en
-        : item.dish_name || ''
+      // Skip cancelled items
+      if (item.item_status === 'cancelled') continue
+      const nameZh = item.dish_name || ''
+      const namePt = item.dish_name_pt || nameZh
       totalQty += item.quantity
       const price = (item.subtotal || item.dish_price * item.quantity).toFixed(2)
       const priceStr = `${price} MT`
-      const nameLines = wrapLine('  ' + name, W)
-      for (let i = 0; i < nameLines.length; i++) {
-        lines.push(nameLines[i])
+
+      // Chinese name
+      const nameZhLines = wrapLine('  ' + nameZh, W)
+      for (const nl of nameZhLines) lines.push(nl)
+      // Portuguese name
+      if (namePt !== nameZh) {
+        const namePtLines = wrapLine('  ' + namePt, W)
+        for (const nl of namePtLines) lines.push(nl)
       }
       lines.push(padLR(`     x${item.quantity}`, priceStr, W))
     }
   }
   lines.push(sep)
-  if (totalQty > 0) lines.push(padLR(`${L.totalItems}: ${totalQty}`, '', W))
-  lines.push(padLR(`${L.total}:`, `${Number(order.total_amount).toFixed(2)} MT`, W))
+  if (totalQty > 0) lines.push(padLR(`${BI.totalItems}: ${totalQty}`, '', W))
+  lines.push(padLR(`${BI.total}:`, `${Number(order.total_amount).toFixed(2)} MT`, W))
 
-  if (order.payment_method === '现金' && order.cash_received) {
-    lines.push(padLR(`${L.received}:`, `${Number(order.cash_received).toFixed(2)} MT`, W))
-    lines.push(padLR(`${L.change}:`, `${Number(order.change_amount || 0).toFixed(2)} MT`, W))
+  if (isPaymentCash(order.payment_method) && order.cash_received) {
+    lines.push(padLR(`${BI.received}:`, `${Number(order.cash_received).toFixed(2)} MT`, W))
+    lines.push(padLR(`${BI.change}:`, `${Number(order.change_amount || 0).toFixed(2)} MT`, W))
   }
 
   lines.push('')
-  lines.push(centerText(L.thankYou, W))
+  lines.push(centerText(BI.thankYou, W))
+  lines.push('')
+
+  return formatLines(lines)
+}
+
+// ── Kitchen ticket generation ─────────────────────────
+
+function generateKitchenTicket(order, type, items, lang) {
+  // Always bilingual (zh + pt), lang param kept for API compatibility
+  const W = CHARS_PER_LINE
+  const pad = n => String(n).padStart(2, '0')
+  const d = new Date()
+  const time = `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+
+  const headerText = KITCHEN_BI[type] || KITCHEN_BI.new
+  const sep = '-'.repeat(W)
+
+  const lines = [
+    '',
+    centerText(headerText, W),
+    '',
+    `${KITCHEN_BI.orderNo}: #${order.id}`,
+    `${KITCHEN_BI.table}: ${order.table_number}`,
+    `${KITCHEN_BI.waiter}: ${order.waiter_name || '-'}`,
+    `${KITCHEN_BI.time}: ${time}`,
+    sep,
+  ]
+
+  if (items && items.length) {
+    for (const item of items) {
+      const nameZh = item.dish_name || ''
+      const namePt = item.dish_name_pt || nameZh
+
+      // Chinese name
+      const nameZhLines = wrapLine(nameZh, W)
+      for (const nl of nameZhLines) lines.push(nl)
+      // Portuguese name
+      if (namePt !== nameZh) {
+        const namePtLines = wrapLine(namePt, W)
+        for (const nl of namePtLines) lines.push(nl)
+      }
+
+      // Quantity line
+      const qty = item.print_qty != null ? item.print_qty : item.quantity
+      lines.push(padLR(`  ${KITCHEN_BI.qty}: x${qty}`, '', W))
+
+      // Flavor choices (bilingual: zh + pt)
+      let flavors = item.flavors
+      if (typeof flavors === 'string' && flavors) {
+        try { flavors = JSON.parse(flavors) } catch { flavors = null }
+      }
+      if (Array.isArray(flavors) && flavors.length) {
+        for (const f of flavors) {
+          // Flavor name: zh/pt bilingual
+          const fNameZh = f.name || ''
+          const fNamePt = f.name_pt || ''
+          const fName = fNamePt && fNamePt !== fNameZh ? `${fNameZh}/${fNamePt}` : fNameZh
+
+          // Flavor value: stored as "zh/pt/en" trilingual, extract zh + pt
+          let fValueZh = f.value || ''
+          let fValuePt = ''
+          if (f.value && f.value.includes('/')) {
+            const parts = f.value.split('/')
+            fValueZh = parts[0] || ''
+            fValuePt = parts[1] || ''
+          }
+          const fValue = fValuePt && fValuePt !== fValueZh ? `${fValueZh}/${fValuePt}` : fValueZh
+
+          const flavorLine = `  * ${fName}: ${fValue}`
+          const flavorLines = wrapLine(flavorLine, W)
+          for (const fl of flavorLines) lines.push(fl)
+        }
+      }
+
+      // Cancel reason (if cancel type)
+      if (type === 'cancel' && item.cancel_reason) {
+        const reasonLines = wrapLine(`  ${KITCHEN_BI.cancelReason}: ${item.cancel_reason}`, W)
+        for (const rl of reasonLines) lines.push(rl)
+      }
+
+      lines.push('')
+    }
+  }
+
+  lines.push(sep)
   lines.push('')
 
   return formatLines(lines)
@@ -189,6 +275,15 @@ function resolvePrinterName() {
   }
 }
 
+function resolveKitchenPrinterName() {
+  // If KITCHEN_PRINTER_NAME is explicitly set, use it
+  if (KITCHEN_PRINTER_NAME) return KITCHEN_PRINTER_NAME
+  // If PRINTER_NAME is set, kitchen shares the same printer
+  if (PRINTER_NAME) return PRINTER_NAME
+  // Fall back to default printer
+  return resolvePrinterName()
+}
+
 // ── Printing via .NET PrintDocument (custom paper size) ─
 
 function printViaDotNet(text, printerName) {
@@ -207,6 +302,7 @@ function printViaDotNet(text, printerName) {
   fs.writeFileSync(txtPath, text, 'utf-8')
 
   // C# uses File.ReadAllText with UTF-8 to read the receipt text
+  // Font fallback: Consolas for Latin, Microsoft YaHei for CJK characters
   const psScript = [
     'Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"',
     'using System;',
@@ -216,9 +312,15 @@ function printViaDotNet(text, printerName) {
     'using System.Text;',
     'public class RctPrinter {',
     '  private string _text;',
-    '  private Font _font;',
+    '  private Font _latinFont;',
+    '  private Font _cjkFont;',
     '  private float _y;',
-    '  public RctPrinter(string filePath) { _text = File.ReadAllText(filePath, Encoding.UTF8); _font = new Font("Consolas", 7f); _y = 0; }',
+    '  public RctPrinter(string filePath) {',
+    '    _text = File.ReadAllText(filePath, Encoding.UTF8);',
+    '    _latinFont = new Font("Consolas", 7f);',
+    '    _cjkFont = new Font("Microsoft YaHei", 7f);',
+    '    _y = 0;',
+    '  }',
     '  public void Print(string name, int w, int h) {',
     '    var d = new PrintDocument();',
     '    d.PrinterSettings.PrinterName = name;',
@@ -227,13 +329,30 @@ function printViaDotNet(text, printerName) {
     '    d.OriginAtMargins = true;',
     '    d.PrintPage += (s,e) => {',
     '      var brush = new SolidBrush(Color.Black);',
-    '      foreach (var line in _text.Split(new[]{"\\r\\n","\\n"},StringSplitOptions.None)) {',
-    '        e.Graphics.DrawString(line, _font, brush, 2, _y);',
+    '      var lines = _text.Split(new[]{"\\r\\n","\\n"}, StringSplitOptions.None);',
+    '      foreach (var line in lines) {',
+    '        DrawLine(e.Graphics, line, brush, 2, _y);',
     '        _y += 10f;',
     '      }',
     '      e.HasMorePages = false;',
     '    };',
     '    d.Print();',
+    '  }',
+    '  private void DrawLine(Graphics g, string line, Brush brush, float x, float y) {',
+    '    foreach (char c in line) {',
+    '      Font f = IsCjk(c) ? _cjkFont : _latinFont;',
+    '      g.DrawString(c.ToString(), f, brush, x, y);',
+    '      x += g.MeasureString(c.ToString(), f).Width;',
+    '    }',
+    '  }',
+    '  private bool IsCjk(char c) {',
+    '    int cp = (int)c;',
+    '    return (cp >= 0x4E00 && cp <= 0x9FFF) ||',
+    '           (cp >= 0x3000 && cp <= 0x303F) ||',
+    '           (cp >= 0xFF00 && cp <= 0xFFEF) ||',
+    '           (cp >= 0x3400 && cp <= 0x4DBF) ||',
+    '           (cp >= 0x2E80 && cp <= 0x2FDF) ||',
+    '           (cp >= 0xF900 && cp <= 0xFAFF);',
     '  }',
     '}',
     '"@;',
@@ -244,7 +363,7 @@ function printViaDotNet(text, printerName) {
 
   const psPath = path.join(os.tmpdir(), `print-${Date.now()}.ps1`)
   // Write .ps1 with UTF-8 BOM for PowerShell 5.1 compatibility
-  fs.writeFileSync(psPath, '﻿' + psScript, 'utf-8')
+  fs.writeFileSync(psPath, '\uFEFF' + psScript, 'utf-8')
 
   try {
     const result = execSync(
@@ -260,8 +379,8 @@ function printViaDotNet(text, printerName) {
   }
 }
 
-function printText(text) {
-  const printerName = resolvePrinterName()
+function printText(text, printerOverride) {
+  const printerName = printerOverride || resolvePrinterName()
   if (!printerName) {
     console.error('[print] No printer found')
     return { success: false, error: 'No printer found' }
@@ -273,6 +392,24 @@ function printText(text) {
     return result
   } catch (e) {
     console.error('[print] Error:', e.message)
+    return { success: false, error: e.message }
+  }
+}
+
+function printKitchen(text) {
+  const printerName = resolveKitchenPrinterName()
+  if (!printerName) {
+    console.error('[kitchen-print] No kitchen printer found')
+    return { success: false, error: 'No kitchen printer found' }
+  }
+
+  try {
+    const result = printViaDotNet(text, printerName)
+    if (!result.success) console.error('[kitchen-print] Failed:', result.error)
+    else console.log('[kitchen-print] OK →', printerName)
+    return result
+  } catch (e) {
+    console.error('[kitchen-print] Error:', e.message)
     return { success: false, error: e.message }
   }
 }
@@ -289,4 +426,13 @@ function listPrinters() {
   }
 }
 
-module.exports = { generateReceipt, formatReceiptText, printText, listPrinters, PRINTER_NAME }
+module.exports = {
+  generateReceipt,
+  generateKitchenTicket,
+  formatReceiptText,
+  printText,
+  printKitchen,
+  listPrinters,
+  PRINTER_NAME,
+  KITCHEN_PRINTER_NAME,
+}

@@ -18,6 +18,13 @@ export default defineConfig({
         if (warning.code === 'THIS_IS_UNDEFINED' || warning.message.includes('@vueuse')) return
         warn(warning)
       },
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue', 'vue-router'],
+          'vendor-element': ['element-plus', '@element-plus/icons-vue'],
+          'vendor-echarts': ['echarts'],
+        },
+      },
     },
   },
 })

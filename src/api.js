@@ -12,6 +12,21 @@ const BASE_URL = () => {
 }
 const REQUEST_TIMEOUT = 30000 // 30 seconds
 
+// ── 错误码翻译 ──────────────────────────────────────
+import { state as i18nState, getMessages } from './i18n/state.js'
+
+function translateError(data) {
+  // 优先使用 error code
+  if (data?.error) {
+    const locale = i18nState.locale || 'zh'
+    const msgs = getMessages()
+    const errMap = msgs[locale]?.errors || msgs.zh?.errors
+    if (errMap?.[data.error]) return errMap[data.error]
+  }
+  // fallback to server message or status text
+  return data?.message || `HTTP ${data?.status || 'error'}`
+}
+
 async function request(method, path, body, isPublic) {
   const headers = { 'Content-Type': 'application/json' }
   if (!isPublic) {
@@ -39,20 +54,28 @@ async function request(method, path, body, isPublic) {
         localStorage.removeItem('token')
         localStorage.removeItem('isLoggedIn')
         localStorage.removeItem('user')
+        localStorage.removeItem('waiterUser')
         // Save kick-out message for the next page to show
-        if (data.message) sessionStorage.setItem('kickedOutMsg', data.message)
+        const errMsg = translateError(data)
+        if (errMsg) sessionStorage.setItem('kickedOutMsg', errMsg)
         // Redirect management pages to login
         if (window.location.hash.startsWith('#/admin')) {
           window.location.hash = '#/login'
+        } else {
+          // For waiter/order page: reload so onMounted detects missing user
+          window.location.reload()
         }
       }
-      throw new Error(data.message || `HTTP ${res.status}`)
+      throw new Error(translateError(data))
     }
     return data
   } catch (error) {
     clearTimeout(timeoutId)
     if (error.name === 'AbortError') {
-      throw new Error('请求超时，请检查网络连接')
+      const msgs = getMessages()
+      const locale = i18nState.locale || 'zh'
+      const timeoutMsg = msgs[locale]?.errors?.request_timeout || msgs.zh?.errors?.request_timeout || 'Request timed out'
+      throw new Error(timeoutMsg)
     }
     throw error
   }
@@ -85,6 +108,14 @@ export const api = {
   updateDish(id, data) { return request('PUT', `/api/dishes/${id}`, data) },
   deleteDish(id) { return request('DELETE', `/api/dishes/${id}`) },
 
+  // ── Flavors ────────────────────────────
+  getFlavors() { return request('GET', '/api/flavors') },
+  addFlavor(data) { return request('POST', '/api/flavors', data) },
+  updateFlavor(id, data) { return request('PUT', `/api/flavors/${id}`, data) },
+  deleteFlavor(id) { return request('DELETE', `/api/flavors/${id}`) },
+  getDishFlavors(dishId) { return request('GET', `/api/dishes/${dishId}/flavors`) },
+  setDishFlavors(dishId, flavors) { return request('PUT', `/api/dishes/${dishId}/flavors`, { flavors }) },
+
   // ── Orders ────────────────────────────
   getOrders(params = {}) {
     const qs = new URLSearchParams(params).toString()
@@ -92,13 +123,18 @@ export const api = {
   },
   addOrder(data) { return request('POST', '/api/orders', data) },
   updateOrder(id, data) { return request('PUT', `/api/orders/${id}`, data) },
-  submitOrder(id) { return request('POST', `/api/orders/${id}/submit`) },
+  submitOrder(id, lang) { return request('POST', `/api/orders/${id}/submit`, { lang }) },
   cancelOrder(id) { return request('POST', `/api/orders/${id}/cancel`) },
   deleteOrder(id) { return request('DELETE', `/api/orders/${id}`) },
   checkoutOrder(id, data) { return request('POST', `/api/orders/${id}/checkout`, data) },
   reopenOrder(id) { return request('POST', `/api/orders/${id}/reopen`) },
   printOrder(id, lang) { return request('POST', `/api/orders/${id}/print${lang ? '?lang=' + lang : ''}`) },
   getPrinters() { return request('GET', '/api/printers') },
+
+  // ── Kitchen operations ────────────────
+  addItemsToOrder(id, items, lang) { return request('POST', `/api/orders/${id}/add-items`, { items, lang }) },
+  cancelOrderItem(id, itemId, cancelQty, reason, lang) { return request('POST', `/api/orders/${id}/cancel-item`, { item_id: itemId, cancel_qty: cancelQty, reason, lang }) },
+  kitchenReprint(id, lang) { return request('POST', `/api/orders/${id}/kitchen-reprint`, { lang }) },
 
   // ── Employees ─────────────────────────
   getEmployees() { return request('GET', '/api/employees') },

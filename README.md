@@ -94,9 +94,9 @@ cd android && ./gradlew assembleDebug
 Mozambique/
 ├── server/
 │   ├── package.json         # 后端依赖（commonjs）
-│   ├── index.js             # Express 服务 + 所有 API 路由 + WebSocket（~1109行）
-│   ├── db.js                # SQLite 数据库层 + 迁移 + CRUD + 种子数据（~540行）
-│   ├── printer.js           # 双打印模块：厨打58mm + 小票80mm（~445行）
+│   ├── index.js             # Express 服务 + 所有 API 路由 + WebSocket + 审计日志（~1310行）
+│   ├── db.js                # SQLite 数据库层 + 迁移 + 索引 + CRUD + 种子数据（~650行）
+│   ├── printer.js           # 双打印模块：厨打 + 小票 + PowerShell C# PrintDocument（~445行）
 │   ├── data.sqlite          # 运行时 SQLite 数据库文件（自动生成）
 │   ├── data.sqlite.bak      # 每次写操作前自动备份
 │   ├── backups/             # 带时间戳的备份（最多保留 7 个）
@@ -111,12 +111,17 @@ Mozambique/
 │   │   ├── index.js         # t() 函数、getDishName/getCategoryName 等
 │   │   ├── state.js         # 语言状态管理
 │   │   └── zh.js / pt.js / en.js  # 各 ~354 个翻译键
+│   ├── components/           # 可复用组件（从大页面中拆分）
+│   │   ├── DishDetailDialog.vue    # 平板端：菜品详情 + 口味选择 + 加入购物车
+│   │   ├── DishEditDialog.vue      # 管理端：菜品编辑表单 + 多图上传 + 口味配置
+│   │   ├── CategoryManageDialog.vue # 管理端：分类 CRUD + 排序
+│   │   └── OrderDetailDialog.vue   # 详情弹窗：菜品列表 + 退菜 + 加菜 + 补打
 │   └── views/
-│       ├── OrderPage.vue    # 平板点餐页（~2053行，最大组件）
+│       ├── OrderPage.vue    # 平板点餐页（~2000行，已拆分出 2 个组件）
 │       ├── Login.vue        # 登录页（~232行）
 │       ├── AdminLayout.vue  # 管理端布局 + 侧边栏（~495行）
 │       ├── PendingOrders.vue # 待结账订单管理 + 结账 + 加菜/退菜（~889行）
-│       ├── MenuManage.vue   # 菜品/分类/口味 CRUD + 多图上传（~1264行）
+│       ├── MenuManage.vue   # 菜品/分类管理（~570行，已拆分出 2 个组件）
 │       ├── OrderHistory.vue # 已完成订单历史 + 导出（~180行）
 │       ├── Reports.vue      # ECharts 报表仪表盘（~129行）
 │       ├── EmployeeManage.vue # 员工管理（~312行）
@@ -265,6 +270,7 @@ curl http://localhost:3000/api/printers -H "Authorization: Bearer <token>"
 | PUT | /api/dishes/:id | admin,cashier | 修改菜品 |
 | DELETE | /api/dishes/:id | admin,cashier | 删除菜品 |
 | POST | /api/upload | 登录用户 | 上传菜品图片（base64，5MB限制，png/jpg/gif/webp） |
+| DELETE | /api/images | admin,cashier | 安全删除已上传图片 |
 | GET | /api/categories | 登录用户 | 分类列表 |
 | POST | /api/categories | admin,cashier | 新增分类 |
 | PUT | /api/categories/:id | admin,cashier | 修改分类（重命名同步更新菜品） |
@@ -303,6 +309,7 @@ curl http://localhost:3000/api/printers -H "Authorization: Bearer <token>"
 | GET | /api/db/info | admin | 数据库/备份文件信息 |
 | POST | /api/db/backup | admin | 手动备份数据库 |
 | POST | /api/db/restore | admin | 恢复数据库（从备份文件） |
+| GET | /api/audit-logs | admin | 审计日志列表（action/target_type/start/end 筛选，分页） |
 
 ## 数据库表结构
 
@@ -315,3 +322,4 @@ curl http://localhost:3000/api/printers -H "Authorization: Bearer <token>"
 | order_items | 订单明细（菜品快照/数量/厨打状态/单品状态/口味选项） |
 | flavors | 口味模板（三语名称/选项JSON/排序） |
 | dish_flavors | 菜品-口味关联（dish_id/flavor_id/required/排序） |
+| audit_logs | 审计日志（user_id/username/action/target_type/target_id/details/ip） |

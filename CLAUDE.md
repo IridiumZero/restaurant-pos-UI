@@ -21,9 +21,9 @@
 ```
 Mozambique/
 ├── server/                  # 后端
-│   ├── index.js             # Express 服务 + 所有 API 路由 + WebSocket（~1109行）
-│   ├── db.js                # SQLite 数据库层（sql.js），含表结构、迁移、CRUD、种子数据（~540行）
-│   ├── printer.js           # 双打印模块：厨打58mm + 小票80mm（~445行）
+│   ├── index.js             # Express 服务 + 所有 API 路由 + WebSocket + 审计日志（~1310行）
+│   ├── db.js                # SQLite 数据库层（sql.js），含表结构、迁移、索引、CRUD、种子数据（~650行）
+│   ├── printer.js           # 双打印模块：厨打58mm + 小票80mm + PowerShell C# PrintDocument（~445行）
 │   ├── data.sqlite          # 运行时 SQLite 数据库文件
 │   ├── data.sqlite.bak      # 每次 save 前自动备份
 │   ├── backups/             # 带时间戳的备份（最多保留 7 个）
@@ -38,6 +38,11 @@ Mozambique/
 │   │   ├── index.js         # t() 函数、getDishName/CategoryName/Remark、货币格式化
 │   │   ├── state.js         # 语言状态管理（locale）
 │   │   └── zh.js / pt.js / en.js  # 各 ~354 个翻译键
+│   ├── components/           # 可复用组件（从大页面中拆分）
+│   │   ├── DishDetailDialog.vue    # 平板端：菜品详情 + 口味选择 + 加入购物车
+│   │   ├── DishEditDialog.vue      # 管理端：菜品编辑表单 + 多图上传 + 口味配置
+│   │   ├── CategoryManageDialog.vue # 管理端：分类 CRUD + 排序
+│   │   └── OrderDetailDialog.vue   # 详情弹窗：菜品列表 + 退菜 + 加菜 + 补打
 │   └── views/               # 页面组件
 │       ├── OrderPage.vue    # 平板点餐页（~2053行，最大组件）
 │       ├── Login.vue        # 登录页（~232行）
@@ -156,26 +161,27 @@ npm run build && npx cap sync && cd android && ./gradlew assembleDebug
 
 ---
 
-## 当前开发状态（截至 2026-06-22）
+## 当前开发状态（截至 2026-06-23）
 
 **最近提交（最新在前）：**
-1. `fb5e908` Merge feat/kitchen-printing: 多图上传、口味选项、厨打优化及全面审查修复
-2. `760ad1f` feat: 多图上传、口味选项、厨打优化及全面代码审查修复
-3. `f111965` feat: 国际化补全 — 后端错误码 + 前端离线模式翻译 + Tab 样式修复
-4. `322c5bf` fix: 分类 Tab 选中态内联 style 兜底 + CSS class 名对齐
-5. `8355f16` fix: 分类 Tab 改用原生按钮，彻底解决选中态样式不生效
-6. `9f190e7` fix: 修复分类 Tab 栏选中状态样式无区分的问题
-7. `71f867b` fix: WebSocket 改为单例连接 + 指数退避，消除控制台刷屏报错
-8. `f923586` fix: 修复服务员端草稿和待结账列表无数据的问题
-9. `63aad9a` feat: 第二阶段优化 - 分页/离线/实时推送/打包优化/API测试
-10. `ecb5b3c` feat: 全面诊断修复 + UI 统一 + 新增管理员删除订单功能
+1. `16e7adf` fix: Bug修复 + 性能优化 — 分类筛选/草稿取消失败/报表N+1/厨打持久化/全表扫描
+2. `fb5e908` Merge feat/kitchen-printing: 多图上传、口味选项、厨打优化及全面审查修复
+3. `760ad1f` feat: 多图上传、口味选项、厨打优化及全面代码审查修复
+4. `f111965` feat: 国际化补全 — 后端错误码 + 前端离线模式翻译 + Tab 样式修复
+5. `322c5bf` fix: 分类 Tab 选中态内联 style 兜底 + CSS class 名对齐
+6. `8355f16` fix: 分类 Tab 改用原生按钮，彻底解决选中态样式不生效
+7. `9f190e7` fix: 修复分类 Tab 栏选中状态样式无区分的问题
+8. `71f867b` fix: WebSocket 改为单例连接 + 指数退避，消除控制台刷屏报错
+9. `f923586` fix: 修复服务员端草稿和待结账列表无数据的问题
+10. `63aad9a` feat: 第二阶段优化 - 分页/离线/实时推送/打包优化/API测试
 
 **之前里程碑：**
 - JSON → SQLite 迁移（`c485b5f`）
 - 三语国际化 + 双入口架构（`def9bad`）
 - APK 图片路径修复 + Capacitor androidScheme 改为 http
+- 审计日志系统（audit_logs 表 + GET /api/audit-logs）
 
-**活跃开发领域：** 厨房打印系统、多图上传、口味选项系统、WebSocket 实时推送、离线模式、全面代码审查修复
+**活跃开发领域：** 厨房打印系统、多图上传、口味选项系统、WebSocket 实时推送、离线模式、代码审查修复、性能优化
 
 ---
 
@@ -190,7 +196,7 @@ npm run build && npx cap sync && cd android && ./gradlew assembleDebug
 7. **多分类**：dishes.category 用逗号分隔存储（非关联表），支持中英文逗号
 8. **订单快照**：order_items 存储 dish_name/dish_price 快照，防止菜品修改影响历史订单
 9. **服务器 URL 动态检测**：APK 端尝试从 localStorage 或 `location.origin` 获取，自动跳过 Capacitor WebView 的 `https://localhost` URL
-10. **无显式索引**：PRD 指定了索引但当前 schema 未创建（仅主键）
+10. **数据库索引**：`_migrateIndexes()` 自动创建 9 个索引（orders_status/waiter_id/table_status/paid_at, order_items_order_id, dish_flavors_dish_id/flavor_id, audit_logs_created_at/action）
 11. **Dashboard.vue**：旧版点餐页面，已废弃但保留在代码库中
 12. **双打印机系统**：厨房打印机（58mm/20字符每行）+ 小票打印机（80mm/32字符每行），可分别指定不同打印机
 13. **CJK 字体回退**：C# PrintDocument 使用 Consolas (Latin) + Microsoft YaHei (CJK) 逐字符渲染，JS 端 charWidth 与 C# IsCjk 范围保持一致
@@ -203,8 +209,14 @@ npm run build && npx cap sync && cd android && ./gradlew assembleDebug
 20. **WebSocket 实时推送**：订单创建/更新/提交/结账/取消/删除/退菜 等事件广播到所有已认证客户端
 21. **优雅关闭**：SIGINT/SIGTERM 触发数据库持久化后退出
 22. **订单分页**：GET /api/orders 支持 page/pageSize 参数
-23. **厨打状态跟踪**：order_items 记录 kitchen_status (new/printed/cancelled) 和 printed_qty
+23. **厨打状态跟踪**：order_items 记录 kitchen_status (new/printed/cancelled/cancel_pending) 和 printed_qty
 24. **同步更新 README.md**：每次修改项目代码时需要同步更新 README.md
+25. **审计日志**：audit_logs 表记录关键操作（删单/退菜/删菜品/删分类/删口味/恢复数据库/员工变更），含 IP 追踪
+26. **persist 批量合并**：`persist()` 使用 setImmediate 合并同一 tick 的多次调用，减少磁盘 I/O
+27. **报表查询优化**：category-pie 和 dishes-top 一次性加载所有 dishes 到 Map，消除 N+1 查询
+28. **API 查询优化**：热路径中 `find()`/`findOne()` 替换为 `findBy()`/`findOneBy()` 利用 SQLite 索引
+29. **组件拆分**：大页面组件拆分为可复用子组件 — DishDetailDialog/DishEditDialog/CategoryManageDialog/OrderDetailDialog
+30. **图片压缩**：前端上传前自动压缩（大图缩放到 1024px + JPEG 85% 质量），小 PNG (<200KB) 保持原格式
 
 ---
 
@@ -236,10 +248,13 @@ npm test
 ## 已知待优化项
 
 1. **Dashboard.vue 废弃未删除** — 占用代码库空间，建议清理
-2. **无数据库索引** — PRD 指定了索引但 schema 未创建，大量数据时查询性能可能下降
-3. **OrderPage.vue 过大** — ~2053行单文件组件，建议拆分为子组件
-4. **MenuManage.vue 过大** — ~1264行，建议拆分菜品编辑和分类管理为独立组件
+2. ~~无数据库索引~~ ✅ 已修复 — `_migrateIndexes()` 自动创建 9 个索引
+3. **OrderPage.vue 仍较大** — 已拆分出 DishDetailDialog 和 OrderDetailDialog，主文件仍有 ~2000 行，可进一步拆分购物车面板和菜品网格
+4. ~~MenuManage.vue 过大~~ ✅ 已修复 — 拆分出 DishEditDialog 和 CategoryManageDialog，主文件缩减至 ~570 行
 5. **无单元测试** — 缺少后端 API 测试和前端组件测试
-6. **WebSocket 无断线重连（前端）** — 前端 WebSocket 断线后无自动重连机制
-7. **图片无压缩** — 上传时未做压缩/缩放，大图可能影响性能
-8. **无操作日志** — 关键操作（删单、改价、退菜）无审计日志
+6. ~~WebSocket 无断线重连~~ ✅ 已修复 — ws.js 实现单例 + 指数退避重连 (3s→30s)
+7. ~~图片无压缩~~ ✅ 已修复 — DishEditDialog 中上传前 Canvas 压缩（1024px + JPEG 85%）
+8. ~~无操作日志~~ ✅ 已修复 — audit_logs 表 + auditLog() 函数，覆盖删单/退菜/删菜品/删分类/删口味/恢复数据库/员工变更
+9. **JWT 密钥默认值硬编码** — 生产环境应通过 JWT_SECRET 环境变量覆盖
+10. **CORS 全开放** — 局域网场景可接受，但建议生产环境限制来源
+11. **无 HTTPS** — 纯 HTTP 明文传输，JWT token 存在局域网嗅探风险（内网场景可接受）

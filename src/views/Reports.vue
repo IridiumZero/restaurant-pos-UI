@@ -72,7 +72,7 @@ function localizedCategory(raw) {
 const categoryOption = computed(() => ({
   tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
   legend: { bottom: 0 },
-  series: [{ type: 'pie', radius: ['45%','72%'], center: ['50%','45%'], data: categoryData.value.map(d => ({ name: localizedCategory(d.category), value: d.count })), label: { formatter: '{b}\n{d}%' } }],
+  series: [{ type: 'pie', radius: ['45%','72%'], center: ['50%','45%'], data: categoryData.value.map(d => ({ name: localizedCategory(d.category), value: d.value })), label: { formatter: '{b}\n{d}%' } }],
 }))
 
 const paymentOption = computed(() => {

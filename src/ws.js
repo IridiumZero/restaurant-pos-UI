@@ -1,6 +1,7 @@
 /**
  * WebSocket 实时推送客户端（单例模式）
  * 所有组件共享同一个 WebSocket 连接，避免多连接重复报错
+ * 断线自动重连（指数退避 3s→30s），重连后通知组件刷新数据
  */
 import { onUnmounted } from 'vue'
 
@@ -8,6 +9,7 @@ let ws = null
 let reconnectTimer = null
 let reconnectDelay = 3000
 let listeners = new Set()
+let wasConnected = false  // 是否曾经成功连接过（用于区分首次连接和断线重连）
 
 function getWsUrl() {
   const saved = localStorage.getItem('serverUrl')
@@ -51,7 +53,15 @@ function connect() {
 
   ws.onmessage = (evt) => {
     try {
-      notify(JSON.parse(evt.data))
+      const msg = JSON.parse(evt.data)
+      // 断线重连后认证成功：通知所有监听者刷新数据（补发断线期间错过的事件）
+      if (msg.type === 'auth_ok' && wasConnected) {
+        notify({ type: 'reconnected' })
+      }
+      if (msg.type === 'auth_ok') {
+        wasConnected = true
+      }
+      notify(msg)
     } catch {}
   }
 
@@ -92,6 +102,7 @@ export function useWebSocket(onMessage) {
     if (listeners.size === 0) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
+      wasConnected = false
       if (ws) { try { ws.close() } catch {} ws = null }
     }
   })
@@ -102,6 +113,7 @@ export function useWebSocket(onMessage) {
       if (listeners.size === 0) {
         clearTimeout(reconnectTimer)
         reconnectTimer = null
+        wasConnected = false
         if (ws) { try { ws.close() } catch {} ws = null }
       }
     }

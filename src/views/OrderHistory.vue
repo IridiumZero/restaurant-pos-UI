@@ -150,7 +150,7 @@ async function handleDelete(order) {
 }
 
 useWebSocket((msg) => {
-  if (msg.type?.startsWith('order_')) loadOrders()
+  if (msg.type === 'reconnected' || msg.type?.startsWith('order_')) loadOrders()
 })
 
 onMounted(loadOrders)

@@ -186,118 +186,15 @@
     </el-dialog>
 
     <!-- 菜品详情对话框（口味选择） -->
-    <el-dialog v-model="dishDetailVisible" :title="getDishName(selectedDish || {})" width="480px"
-      :close-on-click-modal="true" class="dish-detail-dialog" destroy-on-close>
-      <div v-if="selectedDish" class="dish-detail-body" v-loading="flavorsLoading">
-        <!-- 菜品图片轮播 -->
-        <div v-if="dishImages.length" class="dish-detail-image">
-          <el-carousel v-if="dishImages.length > 1" height="220px" indicator-position="outside" class="dish-detail-carousel">
-            <el-carousel-item v-for="(img, idx) in dishImages" :key="idx">
-              <el-image :src="imageUrl(img)" fit="cover" class="dish-detail-img" />
-            </el-carousel-item>
-          </el-carousel>
-          <el-image v-else :src="imageUrl(dishImages[0])" fit="cover" class="dish-detail-img" />
-        </div>
-        <!-- 菜品名称 -->
-        <h3 class="dish-detail-name">{{ getDishName(selectedDish) }}</h3>
-        <!-- 描述 -->
-        <p v-if="getDishRemark(selectedDish)" class="dish-detail-remark">{{ getDishRemark(selectedDish) }}</p>
-        <!-- 价格 -->
-        <div class="dish-detail-price">{{ formatCurrency(selectedDish.price) }}</div>
-
-        <!-- 口味选择 -->
-        <div v-if="dishFlavors.length" class="dish-detail-flavors">
-          <div v-for="(flavor, fi) in dishFlavors" :key="flavor.flavor_id" class="flavor-group">
-            <div class="flavor-label">
-              {{ getFlavorName(flavor) }}
-              <span v-if="flavor.required" class="flavor-required">{{ t('menu.flavorRequired') }}</span>
-            </div>
-            <el-radio-group v-model="selectedFlavors[flavor.flavor_id]" class="flavor-options" size="small">
-              <el-radio-button v-for="opt in flavor.options" :key="opt" :value="opt" class="flavor-btn">
-                {{ localizeOption(opt) }}
-              </el-radio-button>
-            </el-radio-group>
-          </div>
-        </div>
-
-        <!-- 数量选择 -->
-        <div class="dish-detail-qty-row">
-          <span class="dish-detail-qty-label">{{ t('order.qty', '数量') }}</span>
-          <div class="dish-detail-qty-controls">
-            <el-button circle :icon="Minus" size="small" @click="detailQty > 1 && detailQty--" :disabled="detailQty <= 1" />
-            <span class="dish-detail-qty-value">{{ detailQty }}</span>
-            <el-button circle :icon="Plus" size="small" @click="detailQty++" />
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="dishDetailVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="confirmAddToCart" :loading="flavorsLoading">
-          {{ t('order.addToCart', '加入购物车') }}
-        </el-button>
-      </template>
-    </el-dialog>
+    <DishDetailDialog v-model:visible="dishDetailVisible" :dish="selectedDish"
+      :flavors="dishFlavors" :flavors-loading="flavorsLoading" :server-url="serverUrl"
+      @add-to-cart="handleAddToCartFromDialog" />
 
     <!-- 订单详情对话框（加菜/退菜/补打） -->
-    <el-dialog v-model="detailVisible" :title="`#${detailOrder?.id} | ${detailOrder?.table_number}${t('order.table')}`" width="600px" :close-on-click-modal="true" class="order-detail-dialog">
-      <div class="order-detail-body" v-if="detailOrder">
-        <!-- 菜品列表 -->
-        <div class="detail-items">
-          <div v-for="item in detailOrder.items" :key="item.id"
-            :class="['detail-item-row', { 'detail-item-cancelled': item.item_status === 'cancelled' }]">
-            <div class="detail-item-info">
-              <span class="detail-item-name">{{ getItemName(item) }}</span>
-              <span class="detail-item-price">{{ item.dish_price }} MT × {{ item.quantity }}</span>
-            </div>
-            <div class="detail-item-actions" v-if="item.item_status !== 'cancelled'">
-              <el-input-number v-model="detailCancelQty[item.id]" :min="0" :max="item.quantity" size="small" style="width:100px" />
-              <el-button size="small" type="danger" plain :disabled="!detailCancelQty[item.id]"
-                @click="handleDetailCancelItem(item)">{{ t('kitchen.cancelItem') }}</el-button>
-            </div>
-            <el-tag v-else size="small" type="danger" effect="dark">{{ t('kitchen.cancelled') }}</el-tag>
-          </div>
-        </div>
-        <div class="detail-total">
-          <span>{{ t('order.totalAmount') }}</span>
-          <span class="detail-total-amount">{{ formatCurrency(detailOrder.total_amount) }}</span>
-        </div>
-
-        <!-- 退菜原因 -->
-        <el-input v-model="detailCancelReason" :placeholder="t('kitchen.cancelReasonPlaceholder')" size="small" style="margin-top:12px" />
-
-        <!-- 加菜面板（折叠） -->
-        <el-divider />
-        <div class="add-panel-header" @click="showAddPanel = !showAddPanel">
-          <span>{{ t('kitchen.addItems') }}</span>
-          <el-icon :style="{ transform: showAddPanel ? 'rotate(180deg)' : '' }"><ArrowRight /></el-icon>
-        </div>
-        <div v-if="showAddPanel" class="add-panel">
-          <el-input v-model="detailDishSearch" :placeholder="t('common.search')" clearable size="small" style="margin-bottom:10px" />
-          <div class="add-dish-grid">
-            <div v-for="dish in detailFilteredDishes" :key="dish.id"
-              :class="['add-dish-card', { selected: detailAddCart[dish.id] }]"
-              @click="toggleDetailAddDish(dish)">
-              <span class="add-dish-name">{{ getDishName(dish) }}</span>
-              <span class="add-dish-price">{{ dish.price }} MT</span>
-              <div v-if="detailAddCart[dish.id]" class="add-dish-qty" @click.stop>
-                <el-button size="small" circle @click.stop="detailDecQty(dish.id)">-</el-button>
-                <span>{{ detailAddCart[dish.id].qty }}</span>
-                <el-button size="small" circle @click.stop="detailIncQty(dish.id)">+</el-button>
-              </div>
-            </div>
-          </div>
-          <div v-if="detailAddCartCount > 0" style="margin-top:12px">
-            <el-button type="primary" @click="handleDetailAddItems" :loading="detailAdding" style="width:100%">
-              {{ t('kitchen.confirmAddItems') }} ({{ detailAddCartCount }}{{ t('order.cartItem') }})
-            </el-button>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="handleDetailReprint" :loading="detailReprinting" size="small">{{ t('kitchen.reprint') }}</el-button>
-        <el-button @click="detailVisible = false">{{ t('common.close') }}</el-button>
-      </template>
-    </el-dialog>
+    <OrderDetailDialog ref="orderDetailDialogRef" v-model:visible="detailVisible"
+      :order="detailOrder" :dishes="dishes" :locale="locale"
+      @cancel-item="handleDetailCancelItem" @add-items="handleDetailAddItems"
+      @reprint="handleDetailReprint" />
   </div>
 </template>
 
@@ -305,10 +202,12 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Minus, Plus, Delete, UserFilled, ArrowRight, Setting, User, Lock } from '@element-plus/icons-vue'
-import { useI18n, localeOptions, getDishName, getCategoryName, getDishRemark, getFlavorName, localizeOption } from '../i18n'
+import { useI18n, localeOptions, getDishName, getCategoryName, getDishRemark, localizeOption } from '../i18n'
 import { api } from '../api'
 import { cacheMenu, getCachedMenu, queueOrder, syncPendingOrders, getPendingCount } from '../offline'
 import { useWebSocket } from '../ws'
+import DishDetailDialog from '../components/DishDetailDialog.vue'
+import OrderDetailDialog from '../components/OrderDetailDialog.vue'
 
 // 在控制台打印厨打单内容（方便调试）
 function logKitchenTicket(result, label) {
@@ -353,7 +252,7 @@ const filteredDishes = computed(() => {
   if (activeCategory.value === '全部') return dishes.value.filter(d => d.status !== 'inactive')
   return dishes.value.filter(d => {
     if (d.status === 'inactive') return false
-    const cats = (d.category || '').split(',').map(c => c.trim())
+    const cats = (d.category || '').split(/[,，]/).map(c => c.trim())
     return cats.includes(activeCategory.value)
   })
 })
@@ -371,33 +270,13 @@ const myPending = ref([])
 // ── 订单详情（加菜/退菜/补打）─────
 const detailVisible = ref(false)
 const detailOrder = ref(null)
-const detailCancelQty = ref({})
-const detailCancelReason = ref('')
-const detailReprinting = ref(false)
-const showAddPanel = ref(false)
-const detailAddCart = ref({})
-const detailDishSearch = ref('')
-const detailAdding = ref(false)
+const orderDetailDialogRef = ref(null)
 
 // ── 菜品详情/口味选择 ──────────────────
 const dishDetailVisible = ref(false)
 const selectedDish = ref(null)
 const dishFlavors = ref([])
-const selectedFlavors = ref({})
 const flavorsLoading = ref(false)
-const detailQty = ref(1)
-
-const dishImages = computed(() => {
-  const dish = selectedDish.value
-  if (!dish) return []
-  if (dish.images) {
-    try {
-      const arr = typeof dish.images === 'string' ? JSON.parse(dish.images) : dish.images
-      if (Array.isArray(arr) && arr.length) return arr
-    } catch {}
-  }
-  return dish.image ? [dish.image] : []
-})
 
 function cartFlavorName(fl) {
   if (locale.value === 'pt' && fl.name_pt) return fl.name_pt
@@ -430,6 +309,8 @@ const wsConnected = ref(false)
 useWebSocket((msg) => {
   if (msg.type === 'connected') return
   if (msg.type === 'auth_ok') { wsConnected.value = true; return }
+  // 断线重连后刷新数据（补发断线期间错过的事件）
+  if (msg.type === 'reconnected') { loadMyOrders(); loadDishes(); return }
   // 收到订单相关事件时刷新数据
   if (msg.type?.startsWith('order_')) {
     loadMyOrders()
@@ -462,28 +343,10 @@ function flavorsMatch(f1, f2) {
   return f1.every(fl => f2.some(f2fl => f2fl.name === fl.name && f2fl.value === fl.value))
 }
 
-function addToCart(dish) {
-  if (dish.status === 'inactive' || dish.status === 'sold_out') return
-  const existing = cart.value.find(i => i.dishId === dish.id && !i.flavors?.length)
-  if (existing) {
-    existing.qty++
-  } else {
-    cart.value.push({
-      dishId: dish.id,
-      name: getDishName(dish),
-      price: dish.price,
-      qty: 1,
-      flavors: []
-    })
-  }
-}
-
 async function openDishDetail(dish) {
   if (dish.status === 'inactive' || dish.status === 'sold_out') return
   selectedDish.value = dish
   dishFlavors.value = []
-  selectedFlavors.value = {}
-  detailQty.value = 1
   dishDetailVisible.value = true
 
   // Load flavors (if any)
@@ -491,43 +354,25 @@ async function openDishDetail(dish) {
     flavorsLoading.value = true
     const flavors = await api.getDishFlavors(dish.id)
     dishFlavors.value = flavors || []
-    // Initialize empty selections for each flavor
-    const init = {}
-    dishFlavors.value.forEach(f => { init[f.flavor_id] = '' })
-    selectedFlavors.value = init
   } catch (e) {
-    // API failed - just show dialog without flavors
     dishFlavors.value = []
   } finally {
     flavorsLoading.value = false
   }
 }
 
-function confirmAddToCart() {
-  if (!selectedDish.value) return
-  // Validate required flavors
-  for (const flavor of dishFlavors.value) {
-    if (flavor.required && !selectedFlavors.value[flavor.flavor_id]) {
-      ElMessage.warning((t('order.flavorRequired', '请选择') + ' ' + getFlavorName(flavor)))
-      return
-    }
-  }
-  const flavors = dishFlavors.value
-    .filter(f => selectedFlavors.value[f.flavor_id])
-    .map(f => ({ name: f.name, name_pt: f.name_pt || '', name_en: f.name_en || '', value: selectedFlavors.value[f.flavor_id] }))
-
-  // Find existing cart item with same dish and same flavors
+function handleAddToCartFromDialog({ dish, flavors, qty }) {
   const existing = cart.value.find(
-    i => i.dishId === selectedDish.value.id && flavorsMatch(i.flavors, flavors)
+    i => i.dishId === dish.id && flavorsMatch(i.flavors, flavors)
   )
   if (existing) {
-    existing.qty += detailQty.value
+    existing.qty += qty
   } else {
     cart.value.push({
-      dishId: selectedDish.value.id,
-      name: getDishName(selectedDish.value),
-      price: selectedDish.value.price,
-      qty: detailQty.value,
+      dishId: dish.id,
+      name: getDishName(dish),
+      price: dish.price,
+      qty: qty,
       flavors
     })
   }
@@ -692,6 +537,12 @@ async function loadMyOrders() {
 }
 
 async function continueDraft(order) {
+  try {
+    await api.cancelOrder(order.id)
+  } catch (e) {
+    ElMessage.error(t('order.cancelDraftFailed') + ': ' + (e.message || ''))
+    return // 取消失败则停止，避免创建重复草稿
+  }
   tableNumber.value = order.table_number
   cart.value = (order.items || []).map(i => ({
     dishId: i.dish_id,
@@ -700,38 +551,10 @@ async function continueDraft(order) {
     qty: i.quantity || i.qty,
     flavors: i.flavors || []
   }))
-  // 删除草稿
-  try { await api.cancelOrder(order.id) } catch (e) { console.error('删除草稿失败:', e) }
   await loadMyOrders()
 }
 
 // ── 订单详情功能 ──────────────────
-
-function getItemName(item) {
-  if (!item) return ''
-  // Try localized field first (enriched by backend)
-  if (locale.value === 'pt' && item.dish_name_pt) return item.dish_name_pt
-  if (locale.value === 'en' && item.dish_name_en) return item.dish_name_en
-  // Fallback to dish map for local name lookup
-  const d = dishes.value.find(dd => dd.id === item.dish_id)
-  if (d) return getDishName(d)
-  return item.dish_name || ''
-}
-
-const detailFilteredDishes = computed(() => {
-  let list = dishes.value.filter(d => d.status === 'active')
-  if (detailDishSearch.value) {
-    const q = detailDishSearch.value.toLowerCase()
-    list = list.filter(d =>
-      (d.name || '').toLowerCase().includes(q) ||
-      (d.name_pt || '').toLowerCase().includes(q) ||
-      (d.name_en || '').toLowerCase().includes(q)
-    )
-  }
-  return list
-})
-
-const detailAddCartCount = computed(() => Object.values(detailAddCart.value).reduce((s, i) => s + i.qty, 0))
 
 async function showOrderDetail(order) {
   // Refresh order data from server to get latest items
@@ -742,48 +565,12 @@ async function showOrderDetail(order) {
   } catch {
     detailOrder.value = order
   }
-  detailCancelQty.value = {}
-  detailCancelReason.value = ''
-  detailAddCart.value = {}
-  detailDishSearch.value = ''
-  showAddPanel.value = false
-  for (const item of (detailOrder.value.items || [])) {
-    if (item.item_status !== 'cancelled') {
-      detailCancelQty.value[item.id] = 0
-    }
-  }
   detailVisible.value = true
 }
 
-function toggleDetailAddDish(dish) {
-  if (detailAddCart.value[dish.id]) {
-    delete detailAddCart.value[dish.id]
-  } else {
-    detailAddCart.value[dish.id] = { dish, qty: 1 }
-  }
-}
-
-function detailIncQty(dishId) {
-  if (detailAddCart.value[dishId]) detailAddCart.value[dishId].qty++
-}
-
-function detailDecQty(dishId) {
-  if (detailAddCart.value[dishId]) {
-    detailAddCart.value[dishId].qty--
-    if (detailAddCart.value[dishId].qty <= 0) delete detailAddCart.value[dishId]
-  }
-}
-
-async function handleDetailAddItems() {
+async function handleDetailAddItems(items) {
   if (!detailOrder.value) return
-  detailAdding.value = true
   try {
-    const items = Object.values(detailAddCart.value).map(c => ({
-      dish_id: c.dish.id,
-      name: getDishName(c.dish),
-      price: c.dish.price,
-      qty: c.qty,
-    }))
     const result = await api.addItemsToOrder(detailOrder.value.id, items, locale.value)
     logKitchenTicket(result, 'Add Items')
     if (result.kitchen_print?.success) {
@@ -791,21 +578,17 @@ async function handleDetailAddItems() {
     } else {
       ElMessage.warning(t('kitchen.addItemsSuccess') + (result.kitchen_print?.error ? ' — ' + t('kitchen.kitchenPrintFail') : ''))
     }
-    detailAddCart.value = {}
     await showOrderDetail(detailOrder.value) // Refresh
     await loadMyOrders()
   } catch (e) {
     ElMessage.error(e.message)
   }
-  detailAdding.value = false
 }
 
-async function handleDetailCancelItem(item) {
-  const qty = detailCancelQty.value[item.id]
-  if (!qty || qty <= 0) return
+async function handleDetailCancelItem({ item, qty, reason }) {
   try {
     const result = await api.cancelOrderItem(
-      detailOrder.value.id, item.id, qty, detailCancelReason.value, locale.value
+      detailOrder.value.id, item.id, qty, reason, locale.value
     )
     logKitchenTicket(result, 'Cancel Item')
     if (result.kitchen_print?.success) {
@@ -813,7 +596,6 @@ async function handleDetailCancelItem(item) {
     } else {
       ElMessage.warning(t('kitchen.cancelItemSuccess') + (result.kitchen_print?.error ? ' — ' + t('kitchen.kitchenPrintFail') : ''))
     }
-    detailCancelReason.value = ''
     await showOrderDetail(detailOrder.value) // Refresh
     await loadMyOrders()
   } catch (e) {
@@ -823,7 +605,6 @@ async function handleDetailCancelItem(item) {
 
 async function handleDetailReprint() {
   if (!detailOrder.value) return
-  detailReprinting.value = true
   try {
     const result = await api.kitchenReprint(detailOrder.value.id, locale.value)
     logKitchenTicket(result, 'Reprint')
@@ -835,7 +616,9 @@ async function handleDetailReprint() {
   } catch (e) {
     ElMessage.error(e.message)
   }
-  detailReprinting.value = false
+  if (orderDetailDialogRef.value) {
+    orderDetailDialogRef.value.reprinting = false
+  }
 }
 
 function imageUrl(path) {
@@ -1680,159 +1463,6 @@ onMounted(async () => {
   }
 }
 
-/* ── Order detail dialog ─────────────── */
-
-.order-detail-body {
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.detail-items {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.detail-item-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
-  transition: all 0.2s;
-}
-
-.detail-item-row:hover {
-  border-color: #c0c4cc;
-}
-
-.detail-item-cancelled {
-  opacity: 0.45;
-  text-decoration: line-through;
-  background: rgba(245, 108, 108, 0.06);
-}
-
-.detail-item-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-}
-
-.detail-item-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #303133;
-}
-
-.detail-item-price {
-  font-size: 13px;
-  color: #909399;
-  white-space: nowrap;
-}
-
-.detail-item-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.detail-total {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 14px 0;
-  font-size: 15px;
-  font-weight: 500;
-  color: #606266;
-}
-
-.detail-total-amount {
-  font-size: 22px;
-  font-weight: 700;
-  color: #f56c6c;
-}
-
-/* Add panel (collapsible) */
-.add-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 0;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 500;
-  color: #667eea;
-  user-select: none;
-}
-
-.add-panel-header:hover {
-  color: #764ba2;
-}
-
-.add-panel {
-  padding: 8px 0;
-}
-
-.add-dish-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 8px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.add-dish-card {
-  padding: 8px 10px;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.add-dish-card:hover {
-  border-color: #667eea;
-  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.12);
-}
-
-.add-dish-card.selected {
-  border-color: #667eea;
-  background: rgba(102, 126, 234, 0.06);
-}
-
-.add-dish-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: #303133;
-  line-height: 1.3;
-}
-
-.add-dish-price {
-  font-size: 11px;
-  color: #909399;
-}
-
-.add-dish-qty {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-.add-dish-qty span {
-  font-weight: 600;
-  font-size: 14px;
-  color: #667eea;
-  min-width: 16px;
-  text-align: center;
-}
-
 /* ==================== 购物车口味标签 ==================== */
 .cart-item-flavors {
   display: flex;
@@ -1850,204 +1480,4 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-/* ==================== 菜品详情对话框 ==================== */
-.dish-detail-dialog :deep(.el-dialog) {
-  border-radius: 16px !important;
-  overflow: hidden;
-}
-
-.dish-detail-body {
-  padding: 4px 0;
-}
-
-.dish-detail-image {
-  width: 100%;
-  border-radius: 12px;
-  overflow: hidden;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-}
-
-.dish-detail-carousel {
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.dish-detail-carousel :deep(.el-carousel__indicators--outside) {
-  position: relative;
-  margin-top: -24px;
-}
-
-.dish-detail-carousel :deep(.el-carousel__indicator .el-carousel__button) {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.dish-detail-carousel :deep(.el-carousel__indicator.is-active .el-carousel__button) {
-  background: #667eea;
-}
-
-.dish-detail-img {
-  width: 100%;
-  height: 220px;
-  display: block;
-}
-
-.dish-detail-img :deep(img) {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.dish-detail-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: #2d3748;
-  margin: 0 0 6px 0;
-}
-
-.dish-detail-remark {
-  font-size: 14px;
-  color: #718096;
-  margin: 0 0 10px 0;
-  line-height: 1.5;
-}
-
-.dish-detail-price {
-  font-size: 22px;
-  font-weight: 800;
-  color: #f56c6c;
-  background: linear-gradient(135deg, rgba(245, 108, 108, 0.1) 0%, rgba(255, 107, 43, 0.1) 100%);
-  padding: 6px 16px;
-  border-radius: 10px;
-  display: inline-block;
-  margin-bottom: 18px;
-}
-
-.dish-detail-flavors {
-  margin-bottom: 18px;
-}
-
-.flavor-group {
-  margin-bottom: 12px;
-}
-
-.flavor-group:last-child {
-  margin-bottom: 0;
-}
-
-.flavor-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #2d3748;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.flavor-required {
-  font-size: 11px;
-  font-weight: 600;
-  color: #f56c6c;
-  background: rgba(245, 108, 108, 0.1);
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid rgba(245, 108, 108, 0.3);
-}
-
-.flavor-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.flavor-btn {
-  margin-right: 0 !important;
-}
-
-.flavor-btn :deep(.el-radio-button__inner) {
-  font-size: 12px;
-  padding: 5px 12px;
-  border-radius: 6px !important;
-  border: 1px solid #dcdfe6 !important;
-  box-shadow: none !important;
-  color: #606266;
-  background: #f5f7fa;
-}
-
-.flavor-btn:deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff;
-  border-color: #667eea !important;
-}
-
-.dish-detail-qty-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 0 4px;
-  border-top: 1px solid rgba(102, 126, 234, 0.1);
-}
-
-.dish-detail-qty-label {
-  font-size: 15px;
-  font-weight: 600;
-  color: #2d3748;
-}
-
-.dish-detail-qty-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.dish-detail-qty-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: #667eea;
-  min-width: 28px;
-  text-align: center;
-}
-
-.dish-detail-dialog :deep(.el-dialog__footer) {
-  padding: 12px 20px 20px;
-}
-
-.dish-detail-dialog :deep(.el-button--primary) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-  border: none !important;
-  border-radius: 10px !important;
-  font-weight: 600 !important;
-  flex: 1;
-  transition: all 0.3s ease !important;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3) !important;
-}
-
-.dish-detail-dialog :deep(.el-button--primary:hover) {
-  transform: translateY(-2px) !important;
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4) !important;
-}
-
-/* Mobile responsive for dish detail dialog */
-@media (max-width: 600px) {
-  .dish-detail-dialog :deep(.el-dialog) {
-    width: 92vw !important;
-    max-width: 480px !important;
-  }
-
-  .dish-detail-img {
-    height: 160px;
-  }
-
-  .dish-detail-name {
-    font-size: 18px;
-  }
-
-  .dish-detail-price {
-    font-size: 18px;
-  }
-}
 </style>

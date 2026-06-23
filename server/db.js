@@ -35,6 +35,7 @@ async function init() {
   _migrateTokenVersion()
   _migrateKitchenPrint()
   _migrateFlavors()
+  _migrateIndexes()
 
   // Migrate from old JSON
   if (fs.existsSync(JSON_PATH)) {
@@ -127,6 +128,17 @@ function _createTables() {
     dish_price REAL NOT NULL,
     quantity INTEGER NOT NULL,
     subtotal REAL NOT NULL
+  )`)
+  _db.run(`CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    details TEXT DEFAULT '{}',
+    ip TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
   )`)
   _db.run('PRAGMA foreign_keys = ON')
 }
@@ -285,6 +297,34 @@ function _migrateFlavors() {
   }
 }
 
+function _migrateIndexes() {
+  const indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status)',
+    'CREATE INDEX IF NOT EXISTS idx_orders_waiter_id ON orders(waiter_id)',
+    'CREATE INDEX IF NOT EXISTS idx_orders_table_status ON orders(table_number, status)',
+    'CREATE INDEX IF NOT EXISTS idx_orders_paid_at ON orders(paid_at)',
+    'CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id)',
+    'CREATE INDEX IF NOT EXISTS idx_dish_flavors_dish_id ON dish_flavors(dish_id)',
+    'CREATE INDEX IF NOT EXISTS idx_dish_flavors_flavor_id ON dish_flavors(flavor_id)',
+    'CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)',
+    'CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)',
+  ]
+  let created = 0
+  for (const sql of indexes) {
+    const name = sql.match(/idx_\w+/)?.[0] || ''
+    // Check if index already exists
+    const existing = _all(`SELECT name FROM sqlite_master WHERE type='index' AND name=?`, [name])
+    if (!existing.length) {
+      _db.run(sql)
+      created++
+    }
+  }
+  if (created > 0) {
+    console.log(`  Migrated: created ${created} SQL indexes`)
+    persist()
+  }
+}
+
 function _migrateFromJSON(jsonData) {
   // Build set of valid column names for each table
   const schema = {
@@ -404,10 +444,21 @@ function _count(table) {
 // ── Persistence ──────────────────────────────────────
 
 let _persistTimer = null
+let _persistPending = false
 const PERSIST_DEBOUNCE_MS = 200
 
 function persist() {
-  // 立即写入数据库文件（保证数据安全）
+  // 批量合并：同一事件循环 tick 内的多次 persist 调用只执行一次磁盘写入
+  if (_persistPending) return
+  _persistPending = true
+  setImmediate(() => {
+    _persistPending = false
+    _doPersist()
+  })
+}
+
+function _doPersist() {
+  // 将 WASM 内存数据库导出并写入磁盘（原子写入：先写临时文件再重命名）
   const buffer = _db.export()
   const tmpPath = DB_PATH + '.tmp'
   fs.writeFileSync(tmpPath, Buffer.from(buffer))
@@ -425,14 +476,17 @@ function persist() {
 
 function _saveTimestampedBackup() {
   if (!fs.existsSync(DB_PATH)) return
-  try {
-    if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true })
-    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-    const dest = path.join(BACKUPS_DIR, `data-${ts}.sqlite`)
-    fs.copyFileSync(DB_PATH, dest)
-    // Rotate old backups
-    _rotateBackups()
-  } catch {}
+  // 使用异步 I/O 避免阻塞事件循环
+  setImmediate(async () => {
+    try {
+      if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true })
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const dest = path.join(BACKUPS_DIR, `data-${ts}.sqlite`)
+      await fs.promises.copyFile(DB_PATH, dest)
+      // Rotate old backups
+      _rotateBackups()
+    } catch {}
+  })
 }
 
 function _rotateBackups() {
@@ -464,6 +518,34 @@ function save() {
 }
 
 // ── CRUD ─────────────────────────────────────────────
+
+/**
+ * SQL WHERE 查询（利用索引，避免全表扫描）
+ * @param {string} table - 表名
+ * @param {string} where - SQL WHERE 子句，如 'status = ? AND waiter_id = ?'
+ * @param {Array} params - 参数数组
+ */
+function findBy(table, where, params = []) {
+  return _all(`SELECT * FROM ${table} WHERE ${where}`, params)
+}
+
+/**
+ * SQL WHERE 查询单条记录
+ */
+function findOneBy(table, where, params = []) {
+  const rows = _all(`SELECT * FROM ${table} WHERE ${where} LIMIT 1`, params)
+  return rows[0]
+}
+
+/**
+ * SQL WHERE 删除（利用索引）
+ */
+function removeBy(table, where, params = []) {
+  _db.run(`DELETE FROM ${table} WHERE ${where}`, params)
+  const changed = _db.getRowsModified()
+  if (changed > 0 && !_inTransaction) persist()
+  return changed
+}
 
 function find(table, predicate) {
   const rows = _all(`SELECT * FROM ${table}`)
@@ -518,6 +600,35 @@ function verifyPassword(pw, hash) {
   return bcrypt.compareSync(pw, hash)
 }
 
+// ── Audit Log ──────────────────────────────────────
+
+/**
+ * 记录操作审计日志
+ * @param {number|null} userId - 操作用户ID
+ * @param {string} username - 操作用户名
+ * @param {string} action - 操作类型 (dish_delete, order_cancel, order_reopen, order_delete, category_delete, flavor_delete, cancel_item, db_restore, employee_create, employee_update)
+ * @param {string} targetType - 目标类型 (dish, order, category, flavor, order_item, database, employee)
+ * @param {string|number} targetId - 目标ID
+ * @param {object} details - 额外详情
+ * @param {string} ip - 客户端IP
+ */
+function auditLog(userId, username, action, targetType, targetId, details = {}, ip = '') {
+  try {
+    insert('audit_logs', {
+      user_id: userId || null,
+      username: username || '',
+      action,
+      target_type: targetType || '',
+      target_id: targetId != null ? String(targetId) : '',
+      details: typeof details === 'string' ? details : JSON.stringify(details),
+      ip,
+      created_at: new Date().toISOString()
+    })
+  } catch (e) {
+    console.warn('[audit-log] Failed:', e.message)
+  }
+}
+
 // ── Transaction ──────────────────────────────────────
 
 let _inTransaction = false
@@ -537,4 +648,4 @@ function runTransaction(fn) {
   }
 }
 
-module.exports = { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction }
+module.exports = { init, find, findOne, findBy, findOneBy, removeBy, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction, auditLog }

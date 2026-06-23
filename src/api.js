@@ -87,6 +87,7 @@ export const api = {
 
   // ── Upload ───────────────────────────
   uploadImage(base64) { return request('POST', '/api/upload', { image: base64 }) },
+  deleteImage(path) { return request('DELETE', '/api/images', { path }) },
 
   // ── Auth ──────────────────────────────
   login(employeeNo, password) {

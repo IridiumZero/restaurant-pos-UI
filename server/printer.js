@@ -5,9 +5,16 @@ const os = require('os')
 
 const PRINTER_NAME = process.env.PRINTER_NAME || ''
 const KITCHEN_PRINTER_NAME = process.env.KITCHEN_PRINTER_NAME || ''
-const CHARS_PER_LINE = parseInt(process.env.RECEIPT_WIDTH) || 20
-const PAPER_W_MM = parseInt(process.env.RECEIPT_WIDTH_MM) || 58
-const PAPER_H_MM = parseInt(process.env.RECEIPT_HEIGHT_MM) || 80
+
+// Receipt printer: 80mm paper
+const RECEIPT_CHARS = parseInt(process.env.RECEIPT_WIDTH) || 32
+const RECEIPT_W_MM  = parseInt(process.env.RECEIPT_WIDTH_MM) || 80
+const RECEIPT_H_MM  = parseInt(process.env.RECEIPT_HEIGHT_MM) || 80
+
+// Kitchen printer: 80mm paper (same as receipt)
+const KITCHEN_CHARS = parseInt(process.env.KITCHEN_WIDTH) || 32
+const KITCHEN_W_MM  = parseInt(process.env.KITCHEN_WIDTH_MM) || 80
+const KITCHEN_H_MM  = parseInt(process.env.KITCHEN_HEIGHT_MM) || 80
 
 // ── Bilingual template (zh + pt, always) ──────────────
 const BI = {
@@ -31,10 +38,10 @@ function isPaymentCash(method) {
 
 // ── Kitchen bilingual template (zh + pt, always) ──────
 const KITCHEN_BI = {
-  new:      '=== 厨打/COZINHA ===',
-  addon:    '== 加菜/ADICIONAL ==',
-  cancel:   '== 退菜/CANCELADO ==',
-  reprint:  '== 补打/REIMPR ==',
+  new:      '====== 厨打/COZINHA ======',
+  addon:    '===== 加菜/ADICIONAL =====',
+  cancel:   '==== 退菜/CANCELADO =====',
+  reprint:  '===== 补打/REIMPRIMIR =====',
   orderNo:  '单号/Pedido',
   table:    '桌号/Mesa',
   waiter:   '服务员/Garçom',
@@ -96,13 +103,13 @@ function centerText(text, width) {
   return ' '.repeat(pad) + text
 }
 
-function formatLines(lines) {
+function formatLines(lines, maxWidth) {
   const result = []
   for (const line of lines) {
-    if (visualLength(line) <= CHARS_PER_LINE) {
+    if (visualLength(line) <= maxWidth) {
       result.push(line)
     } else {
-      result.push(...wrapLine(line, CHARS_PER_LINE))
+      result.push(...wrapLine(line, maxWidth))
     }
   }
   return result
@@ -112,7 +119,7 @@ function formatLines(lines) {
 
 function generateReceipt(order, lang) {
   // Always bilingual (zh + pt), lang param kept for API compatibility
-  const W = CHARS_PER_LINE
+  const W = RECEIPT_CHARS
   const pad = n => String(n).padStart(2, '0')
   const d = new Date()
   const time = `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
@@ -168,14 +175,14 @@ function generateReceipt(order, lang) {
   lines.push(centerText(BI.thankYou, W))
   lines.push('')
 
-  return formatLines(lines)
+  return formatLines(lines, W)
 }
 
 // ── Kitchen ticket generation ─────────────────────────
 
 function generateKitchenTicket(order, type, items, lang) {
   // Always bilingual (zh + pt), lang param kept for API compatibility
-  const W = CHARS_PER_LINE
+  const W = KITCHEN_CHARS
   const pad = n => String(n).padStart(2, '0')
   const d = new Date()
   const time = `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
@@ -253,7 +260,7 @@ function generateKitchenTicket(order, type, items, lang) {
   lines.push(sep)
   lines.push('')
 
-  return formatLines(lines)
+  return formatLines(lines, W)
 }
 
 function formatReceiptText(lines) {
@@ -286,14 +293,14 @@ function resolveKitchenPrinterName() {
 
 // ── Printing via .NET PrintDocument (custom paper size) ─
 
-function printViaDotNet(text, printerName) {
-  const paperW = Math.round(PAPER_W_MM * 3.937)   // mm → hundredths of inch
+function printViaDotNet(text, printerName, paperWmm, paperHmm) {
+  const paperW = Math.round(paperWmm * 3.937)   // mm → hundredths of inch
 
   // Calculate paper height from line count (roll paper, no fixed page length)
   const lineCount = text.split('\n').length
   const lineH_mm = 2.6   // 10px at 96 DPI ≈ 2.6mm per line (7pt font)
-  const paperH_mm = Math.max(Number(PAPER_H_MM) || 80, Math.ceil(lineCount * lineH_mm) + 5)
-  const paperH = Math.round(paperH_mm * 3.937)
+  const calcH_mm = Math.max(Number(paperHmm) || 80, Math.ceil(lineCount * lineH_mm) + 5)
+  const paperH = Math.round(calcH_mm * 3.937)
 
   const psName = (printerName || '').replace(/'/g, "''")
 
@@ -387,7 +394,7 @@ function printText(text, printerOverride) {
   }
 
   try {
-    const result = printViaDotNet(text, printerName)
+    const result = printViaDotNet(text, printerName, RECEIPT_W_MM, RECEIPT_H_MM)
     if (!result.success) console.error('[print] Failed:', result.error)
     return result
   } catch (e) {
@@ -404,7 +411,7 @@ function printKitchen(text) {
   }
 
   try {
-    const result = printViaDotNet(text, printerName)
+    const result = printViaDotNet(text, printerName, KITCHEN_W_MM, KITCHEN_H_MM)
     if (!result.success) console.error('[kitchen-print] Failed:', result.error)
     else console.log('[kitchen-print] OK →', printerName)
     return result

@@ -440,7 +440,7 @@ async function handleReprint(order) {
 
 // ── WebSocket 实时刷新 ────────────────
 useWebSocket((msg) => {
-  if (msg.type?.startsWith('order_')) {
+  if (msg.type === 'reconnected' || msg.type?.startsWith('order_')) {
     loadOrders()
   }
 })

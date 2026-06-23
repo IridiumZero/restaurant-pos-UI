@@ -7,7 +7,7 @@ const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const os = require('os')
 const WebSocket = require('ws')
-const { init, find, findOne, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction } = require('./db')
+const { init, find, findOne, findBy, findOneBy, removeBy, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction, auditLog } = require('./db')
 const { generateReceipt, generateKitchenTicket, formatReceiptText, printText, printKitchen, listPrinters, PRINTER_NAME, KITCHEN_PRINTER_NAME } = require('./printer')
 
 const JWT_SECRET = process.env.JWT_SECRET || 'moz-restaurant-jwt-secret-2024-fixed-key'
@@ -76,11 +76,56 @@ app.post('/api/upload', auth(['admin', 'cashier', 'waiter']), (req, res) => {
   res.json({ path: `/uploads/${filename}` })
 })
 
+// 安全删除已上传图片（仅允许删除 uploads 目录内的文件）
+function safeDeleteImage(imagePath) {
+  if (!imagePath || typeof imagePath !== 'string') return false
+  // 只允许 /uploads/xxx.ext 格式的路径
+  if (!imagePath.startsWith('/uploads/')) return false
+  const filename = path.basename(imagePath)
+  const fullPath = path.join(UPLOADS_DIR, filename)
+  // 防止目录穿越
+  if (!fullPath.startsWith(UPLOADS_DIR)) return false
+  try {
+    if (fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath)
+      return true
+    }
+  } catch (e) {
+    console.warn('[image-cleanup] Failed to delete:', filename, e.message)
+  }
+  return false
+}
+
+app.delete('/api/images', auth(['admin', 'cashier']), (req, res) => {
+  const { path: imagePath } = req.body
+  safeDeleteImage(imagePath)
+  res.json({ success: true })
+})
+
 // ── Login Rate Limiting ───────────────────────────────
 
 const loginAttempts = new Map()
 const LOGIN_WINDOW_MS = 5 * 60 * 1000 // 5分钟窗口
 const LOGIN_MAX_ATTEMPTS = 10 // 最多10次
+
+// ── Report Cache ────────────────────────────────────
+
+const _reportCache = {}
+const REPORT_CACHE_TTL = 60 * 1000 // 60 seconds
+
+function getCachedReport(key, computeFn) {
+  const now = Date.now()
+  if (_reportCache[key] && (now - _reportCache[key].ts) < REPORT_CACHE_TTL) {
+    return _reportCache[key].data
+  }
+  const data = computeFn()
+  _reportCache[key] = { data, ts: now }
+  return data
+}
+
+function invalidateReportCache() {
+  for (const k of Object.keys(_reportCache)) delete _reportCache[k]
+}
 
 // ── Auth Middleware ───────────────────────────────────
 
@@ -94,7 +139,7 @@ function auth(roles) {
 
       // Check session validity: if token_version has been incremented, this token is stale
       if (payload.ver !== undefined) {
-        const emp = findOne('employees', e => e.id === payload.id)
+        const emp = findOneBy('employees', 'id = ?', [payload.id])
         if (!emp || emp.status !== 'active') return res.status(401).json({ error: 'account_disabled' })
         if (emp.token_version !== payload.ver) return res.status(401).json({ error: 'session_kicked' })
       }
@@ -124,7 +169,7 @@ app.post('/api/auth/login', (req, res) => {
   const { password } = req.body
   if (!employeeNo || !password) return res.status(400).json({ error: 'login_fields_required' })
 
-  const emp = findOne('employees', e => e.username === employeeNo && e.status === 'active')
+  const emp = findOneBy('employees', 'username = ? AND status = ?', [employeeNo, 'active'])
   if (!emp || !verifyPassword(password, emp.password)) return res.status(401).json({ error: 'login_failed' })
 
   // 登录成功，清除该 IP 的计数
@@ -144,7 +189,7 @@ app.get('/api/auth/me', auth(), (req, res) => res.json(req.user))
 
 app.get('/api/dishes', auth(), (req, res) => {
   const { category, status, search } = req.query
-  let result = find('dishes', () => true)
+  let result = findBy('dishes', '1=1', [])
   if (category) result = result.filter(d => (d.category || '').split(/[,，]/).map(c => c.trim()).includes(category))
   if (status) result = result.filter(d => d.status === status)
   if (search) {
@@ -177,7 +222,7 @@ app.post('/api/dishes', auth(['admin', 'cashier']), (req, res) => {
     } catch {}
   }
   if (!coverImage) coverImage = image || ''
-  const allDishes = find('dishes', () => true)
+  const allDishes = findBy('dishes', '1=1', [])
   const maxOrder = allDishes.reduce((max, d) => Math.max(max, d.sort_order ?? 0), 0)
   const dish = insert('dishes', {
     name, name_pt: name_pt || '', name_en: name_en || '', category: catStr, price: Number(price), image: coverImage, images: imagesVal, remark: remark || '', remark_pt: remark_pt || '', remark_en: remark_en || '', sort_order: sort_order ?? (maxOrder + 1), status: status || 'active',
@@ -197,9 +242,22 @@ app.put('/api/dishes/:id', auth(['admin', 'cashier']), (req, res) => {
         fields[k] = typeof req.body[k] === 'string' ? req.body[k] : JSON.stringify(req.body[k])
         // Auto-update cover image
         try {
-          const arr = JSON.parse(fields[k])
-          if (Array.isArray(arr) && arr.length) fields.image = arr[0]
-          else if (Array.isArray(arr) && !arr.length) fields.image = ''
+          const newArr = JSON.parse(fields[k])
+          if (Array.isArray(newArr) && newArr.length) fields.image = newArr[0]
+          else if (Array.isArray(newArr) && !newArr.length) fields.image = ''
+          // 清理被移除的图片文件
+          const oldDish = findOneBy('dishes', 'id = ?', [parseInt(req.params.id)])
+          if (oldDish) {
+            let oldImages = []
+            if (oldDish.images) {
+              try { oldImages = JSON.parse(oldDish.images) } catch {}
+            }
+            if (!oldImages.length && oldDish.image) oldImages = [oldDish.image]
+            const newSet = new Set(Array.isArray(newArr) ? newArr : [])
+            for (const oldImg of oldImages) {
+              if (!newSet.has(oldImg)) safeDeleteImage(oldImg)
+            }
+          }
         } catch {}
       }
       else fields[k] = req.body[k]
@@ -210,6 +268,17 @@ app.put('/api/dishes/:id', auth(['admin', 'cashier']), (req, res) => {
 })
 
 app.delete('/api/dishes/:id', auth(['admin', 'cashier']), (req, res) => {
+  // 清理图片文件
+  const dish = findOneBy('dishes', 'id = ?', [parseInt(req.params.id)])
+  if (dish) {
+    let images = []
+    if (dish.images) {
+      try { images = JSON.parse(dish.images) } catch {}
+    }
+    if (!images.length && dish.image) images = [dish.image]
+    for (const img of images) safeDeleteImage(img)
+    auditLog(req.user.id, req.user.username, 'dish_delete', 'dish', dish.id, { name: dish.name, price: dish.price, category: dish.category }, req.ip)
+  }
   remove('dishes', req.params.id)
   res.json({ success: true })
 })
@@ -217,7 +286,7 @@ app.delete('/api/dishes/:id', auth(['admin', 'cashier']), (req, res) => {
 // ── Categories ─────────────────────────────────────────
 
 app.get('/api/categories', auth(), (req, res) => {
-  const rows = find('categories', () => true)
+  const rows = findBy('categories', '1=1', [])
   rows.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id)
   res.json(rows)
 })
@@ -258,6 +327,7 @@ app.put('/api/categories/:id', auth(['admin', 'cashier']), (req, res) => {
 app.delete('/api/categories/:id', auth(['admin']), (req, res) => {
   const cat = findOne('categories', c => c.id === parseInt(req.params.id))
   if (!cat) return res.status(404).json({ message: '分类不存在' })
+  auditLog(req.user.id, req.user.username, 'category_delete', 'category', cat.id, { name: cat.name }, req.ip)
   remove('categories', req.params.id)
   res.json({ success: true })
 })
@@ -265,7 +335,7 @@ app.delete('/api/categories/:id', auth(['admin']), (req, res) => {
 // ── Flavors (口味模板) ──────────────────────────────────
 
 app.get('/api/flavors', auth(), (req, res) => {
-  const rows = find('flavors', () => true)
+  const rows = findBy('flavors', '1=1', [])
   rows.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id)
   // Parse options JSON for each row
   for (const r of rows) {
@@ -300,10 +370,11 @@ app.put('/api/flavors/:id', auth(['admin']), (req, res) => {
 
 app.delete('/api/flavors/:id', auth(['admin']), (req, res) => {
   const id = parseInt(req.params.id)
+  const flavor = findOneBy('flavors', 'id = ?', [id])
   remove('flavors', id)
   // Clean up junction table
-  const { removeWhere } = require('./db')
-  removeWhere('dish_flavors', df => df.flavor_id === id)
+  removeBy('dish_flavors', 'flavor_id = ?', [id])
+  auditLog(req.user.id, req.user.username, 'flavor_delete', 'flavor', id, { name: flavor?.name }, req.ip)
   res.json({ success: true })
 })
 
@@ -311,7 +382,7 @@ app.delete('/api/flavors/:id', auth(['admin']), (req, res) => {
 
 app.get('/api/dishes/:id/flavors', auth(), (req, res) => {
   const dishId = parseInt(req.params.id)
-  const dishFlavors = find('dish_flavors', df => df.dish_id === dishId)
+  const dishFlavors = findBy('dish_flavors', 'dish_id = ?', [dishId])
   // Enrich with flavor template data
   const result = []
   for (const df of dishFlavors.sort((a, b) => a.sort_order - b.sort_order)) {
@@ -335,8 +406,7 @@ app.put('/api/dishes/:id/flavors', auth(['admin', 'cashier']), (req, res) => {
   const { flavors } = req.body  // Array of { flavor_id, required, sort_order }
   if (!Array.isArray(flavors)) return res.status(400).json({ message: 'flavors must be an array' })
   // Remove existing associations
-  const { removeWhere } = require('./db')
-  removeWhere('dish_flavors', df => df.dish_id === dishId)
+  removeBy('dish_flavors', 'dish_id = ?', [dishId])
   // Add new associations
   for (let i = 0; i < flavors.length; i++) {
     const f = flavors[i]
@@ -352,21 +422,21 @@ app.put('/api/dishes/:id/flavors', auth(['admin', 'cashier']), (req, res) => {
 
 app.get('/api/orders/export', auth(['admin', 'cashier']), (req, res) => {
   const { start, end, waiter_id, table } = req.query
-  let result = find('orders', o => o.status === 'completed')
+  let result = findBy('orders', 'status = ?', ['completed'])
   if (start) result = result.filter(o => o.paid_at >= start)
   if (end) result = result.filter(o => o.paid_at <= end + 'T23:59:59')
   if (waiter_id) result = result.filter(o => o.waiter_id === parseInt(waiter_id))
   if (table) result = result.filter(o => o.table_number === parseInt(table))
   result.sort((a, b) => b.paid_at.localeCompare(a.paid_at))
   for (const o of result) {
-    o.items = find('order_items', oi => oi.order_id === o.id)
+    o.items = findBy('order_items', 'order_id = ?', [o.id])
   }
   res.json(result)
 })
 
 app.get('/api/orders', auth(), (req, res) => {
   const { status, waiter_id, table, page = '1', pageSize = '20' } = req.query
-  let result = find('orders', () => true)
+  let result = findBy('orders', '1=1', [])
   if (status) result = result.filter(o => o.status === status)
   if (waiter_id) result = result.filter(o => o.waiter_id === parseInt(waiter_id))
   if (table) result = result.filter(o => o.table_number === parseInt(table))
@@ -380,7 +450,7 @@ app.get('/api/orders', auth(), (req, res) => {
 
   // Attach items
   for (const o of result) {
-    o.items = find('order_items', oi => oi.order_id === o.id)
+    o.items = findBy('order_items', 'order_id = ?', [o.id])
   }
   res.json({ orders: result, total, page: p, pageSize: ps })
 })
@@ -391,7 +461,7 @@ app.post('/api/orders', auth(), (req, res) => {
 
   // Check table conflict: prevent multiple pending orders on the same table
   if (status === 'pending') {
-    const existing = findOne('orders', o => o.table_number === tableNumber && o.status === 'pending')
+    const existing = findOneBy('orders', 'table_number = ? AND status = ?', [tableNumber, 'pending'])
     if (existing) return res.status(409).json({ error: 'table_conflict', orderId: existing.id })
   }
 
@@ -421,9 +491,9 @@ app.post('/api/orders', auth(), (req, res) => {
   let kitchenPrint = { success: false }
   if (finalStatus === 'pending') {
     try {
-      order.items = find('order_items', oi => oi.order_id === order.id)
+      order.items = findBy('order_items', 'order_id = ?', [order.id])
       for (const item of order.items) {
-        const dish = findOne('dishes', d => d.id === item.dish_id)
+        const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
         if (dish) {
           item.dish_name_pt = dish.name_pt
           item.dish_name_en = dish.name_en
@@ -441,6 +511,7 @@ app.post('/api/orders', auth(), (req, res) => {
         for (const item of order.items) {
           update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
         }
+        save()
       }
     } catch (e) {
       kitchenPrint = { success: false, error: e.message }
@@ -457,7 +528,7 @@ app.put('/api/orders/:id', auth(), (req, res) => {
   if (!tableNumber || !items?.length) return res.status(400).json({ error: 'order_table_required' })
   if (totalAmount === undefined || totalAmount === null) return res.status(400).json({ error: 'order_amount_required' })
   // Only allow editing pending or draft orders
-  const existing = findOne('orders', o => o.id === parseInt(req.params.id))
+  const existing = findOneBy('orders', 'id = ?', [parseInt(req.params.id)])
   if (!existing) return res.status(404).json({ error: 'order_not_found' })
   if (existing.status !== 'pending' && existing.status !== 'draft') return res.status(400).json({ error: 'order_not_editable' })
   runTransaction(() => {
@@ -467,7 +538,7 @@ app.put('/api/orders/:id', auth(), (req, res) => {
     if (status !== undefined) orderFields.status = status
     update('orders', req.params.id, orderFields)
     // Replace order items
-    removeWhere('order_items', oi => oi.order_id === parseInt(req.params.id))
+    removeBy('order_items', 'order_id = ?', [parseInt(req.params.id)])
     for (const item of items) {
       const flavorsStr = item.flavors
         ? (typeof item.flavors === 'string' ? item.flavors : JSON.stringify(item.flavors))
@@ -485,12 +556,12 @@ app.put('/api/orders/:id', auth(), (req, res) => {
 })
 
 app.post('/api/orders/:id/submit', auth(), (req, res) => {
-  const order = findOne('orders', o => o.id === parseInt(req.params.id))
+  const order = findOneBy('orders', 'id = ?', [parseInt(req.params.id)])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
   if (order.status !== 'draft') return res.status(400).json({ error: 'order_draft_only' })
   // 检查桌号冲突
   if (order.table_number) {
-    const existing = findOne('orders', o => o.table_number === order.table_number && o.status === 'pending' && o.id !== order.id)
+    const existing = findOneBy('orders', 'table_number = ? AND status = ? AND id != ?', [order.table_number, 'pending', order.id])
     if (existing) return res.status(409).json({ error: 'table_conflict', orderId: existing.id })
   }
   update('orders', req.params.id, { status: 'pending' })
@@ -499,10 +570,10 @@ app.post('/api/orders/:id/submit', auth(), (req, res) => {
   const lang = req.body.lang || 'zh'
   let kitchenPrint = { success: false }
   try {
-    order.items = find('order_items', oi => oi.order_id === order.id)
+    order.items = findBy('order_items', 'order_id = ?', [order.id])
     // Enrich items with multilingual dish names
     for (const item of order.items) {
-      const dish = findOne('dishes', d => d.id === item.dish_id)
+      const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
       if (dish) {
         item.dish_name_pt = dish.name_pt
         item.dish_name_en = dish.name_en
@@ -520,6 +591,7 @@ app.post('/api/orders/:id/submit', auth(), (req, res) => {
       for (const item of order.items) {
         update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
       }
+      save()
     }
   } catch (e) {
     kitchenPrint = { success: false, error: e.message }
@@ -531,11 +603,13 @@ app.post('/api/orders/:id/submit', auth(), (req, res) => {
 })
 
 app.post('/api/orders/:id/cancel', auth(['admin', 'cashier']), (req, res) => {
-  const order = findOne('orders', o => o.id === parseInt(req.params.id))
+  const order = findOneBy('orders', 'id = ?', [parseInt(req.params.id)])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
   if (order.status === 'completed') return res.status(400).json({ error: 'order_already_completed' })
   update('orders', parseInt(req.params.id), { status: 'cancelled' })
+  auditLog(req.user.id, req.user.username, 'order_cancel', 'order', order.id, { table: order.table_number, total: order.total_amount, prev_status: order.status }, req.ip)
   broadcast('order_cancelled', { id: parseInt(req.params.id) })
+  invalidateReportCache()
   res.json({ success: true })
 })
 
@@ -543,7 +617,7 @@ app.post('/api/orders/:id/cancel', auth(['admin', 'cashier']), (req, res) => {
 
 app.post('/api/orders/:id/add-items', auth(), (req, res) => {
   const orderId = parseInt(req.params.id)
-  const order = findOne('orders', o => o.id === orderId)
+  const order = findOneBy('orders', 'id = ?', [orderId])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
   if (order.status !== 'pending') return res.status(400).json({ error: 'order_must_be_pending' })
 
@@ -577,7 +651,7 @@ app.post('/api/orders/:id/add-items', auth(), (req, res) => {
 
   // Enrich new items with multilingual names for kitchen ticket
   for (const item of newItems) {
-    const dish = findOne('dishes', d => d.id === item.dish_id)
+    const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
     if (dish) {
       item.dish_name_pt = dish.name_pt
       item.dish_name_en = dish.name_en
@@ -598,6 +672,7 @@ app.post('/api/orders/:id/add-items', auth(), (req, res) => {
       for (const item of newItems) {
         update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
       }
+      save()
     }
   } catch (e) {
     kitchenPrint = { success: false, error: e.message }
@@ -612,13 +687,13 @@ app.post('/api/orders/:id/add-items', auth(), (req, res) => {
 
 app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (req, res) => {
   const orderId = parseInt(req.params.id)
-  const order = findOne('orders', o => o.id === orderId)
+  const order = findOneBy('orders', 'id = ?', [orderId])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
 
   const { item_id, cancel_qty, reason, lang } = req.body
   if (!item_id) return res.status(400).json({ error: 'item_id_required' })
 
-  const item = findOne('order_items', oi => oi.id === parseInt(item_id) && oi.order_id === orderId)
+  const item = findOneBy('order_items', 'id = ? AND order_id = ?', [parseInt(item_id), orderId])
   if (!item) return res.status(404).json({ error: 'item_not_found' })
   if (item.item_status === 'cancelled') return res.status(400).json({ error: 'item_already_cancelled' })
 
@@ -635,7 +710,7 @@ app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (r
       update('order_items', item.id, { quantity: newQty, subtotal: newSubtotal, kitchen_status: 'cancel_pending' })
     }
     // Recalculate order total
-    const allItems = find('order_items', oi => oi.order_id === orderId)
+    const allItems = findBy('order_items', 'order_id = ?', [orderId])
     let newTotal = 0
     for (const oi of allItems) {
       if (oi.item_status !== 'cancelled') newTotal += oi.subtotal
@@ -650,7 +725,7 @@ app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (r
     cancel_reason: reason || '',
   }
   // Enrich with multilingual names
-  const dish = findOne('dishes', d => d.id === item.dish_id)
+  const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
   if (dish) {
     cancelItem.dish_name_pt = dish.name_pt
     cancelItem.dish_name_en = dish.name_en
@@ -664,6 +739,7 @@ app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (r
     kitchenPrint.ticket_text = ticketText
     if (kitchenPrint.success) {
       update('order_items', item.id, { kitchen_status: 'cancelled' })
+      save() // 立即持久化，防止崩溃丢失厨打状态
     }
   } catch (e) {
     kitchenPrint = { success: false, error: e.message }
@@ -671,6 +747,7 @@ app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (r
   }
 
   broadcast('order_item_cancelled', { orderId, itemId: item.id })
+  auditLog(req.user.id, req.user.username, 'cancel_item', 'order_item', item.id, { order_id: orderId, dish_name: item.dish_name, cancel_qty: qtyToCancel, reason: reason || '' }, req.ip)
   res.json({ success: true, cancelled_qty: qtyToCancel, kitchen_print: kitchenPrint })
 })
 
@@ -678,16 +755,16 @@ app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (r
 
 app.post('/api/orders/:id/kitchen-reprint', auth(['admin', 'cashier']), (req, res) => {
   const orderId = parseInt(req.params.id)
-  const order = findOne('orders', o => o.id === orderId)
+  const order = findOneBy('orders', 'id = ?', [orderId])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
 
   const { lang } = req.body || {}
-  order.items = find('order_items', oi => oi.order_id === orderId && oi.item_status !== 'cancelled')
+  order.items = findBy('order_items', 'order_id = ? AND item_status != ?', [orderId, 'cancelled'])
   if (!order.items.length) return res.status(400).json({ error: 'no_printable_items' })
 
   // Enrich items
   for (const item of order.items) {
-    const dish = findOne('dishes', d => d.id === item.dish_id)
+    const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
     if (dish) {
       item.dish_name_pt = dish.name_pt
       item.dish_name_en = dish.name_en
@@ -715,20 +792,22 @@ app.post('/api/orders/:id/kitchen-reprint', auth(['admin', 'cashier']), (req, re
 app.delete('/api/orders/:id', auth(['admin']), (req, res) => {
   const orderId = parseInt(req.params.id)
   if (isNaN(orderId)) return res.status(400).json({ error: 'order_id_invalid' })
-  const order = findOne('orders', o => o.id === orderId)
+  const order = findOneBy('orders', 'id = ?', [orderId])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
+  auditLog(req.user.id, req.user.username, 'order_delete', 'order', order.id, { table: order.table_number, total: order.total_amount, status: order.status }, req.ip)
   runTransaction(() => {
-    removeWhere('order_items', oi => oi.order_id === orderId)
+    removeBy('order_items', 'order_id = ?', [orderId])
     remove('orders', orderId)
   })
   broadcast('order_deleted', { id: orderId })
+  invalidateReportCache()
   res.json({ success: true })
 })
 
 app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
   const { paymentMethod, cashReceived, change, lang } = req.body
   const orderId = parseInt(req.params.id)
-  const orderCheck = findOne('orders', o => o.id === orderId)
+  const orderCheck = findOneBy('orders', 'id = ?', [orderId])
   if (!orderCheck) return res.status(404).json({ error: 'order_not_found' })
   if (orderCheck.status !== 'pending') return res.status(400).json({ error: 'order_not_pending' })
   update('orders', orderId, {
@@ -740,12 +819,12 @@ app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
   // Auto-print receipt
   let printResult = { success: false, error: 'No order found' }
   try {
-    const order = findOne('orders', o => o.id === orderId)
+    const order = findOneBy('orders', 'id = ?', [orderId])
     if (order) {
-      order.items = find('order_items', oi => oi.order_id === order.id)
+      order.items = findBy('order_items', 'order_id = ?', [order.id])
       // Enrich items with translated dish names from dishes table
       for (const item of order.items) {
-        const dish = findOne('dishes', d => d.id === item.dish_id)
+        const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
         if (dish) {
           item.dish_name_pt = dish.name_pt
           item.dish_name_en = dish.name_en
@@ -762,12 +841,18 @@ app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
   }
 
   broadcast('order_checkout', { id: orderId, paymentMethod })
+  invalidateReportCache()
   res.json({ success: true, print: printResult })
 })
 
 app.post('/api/orders/:id/reopen', auth(['admin', 'cashier']), (req, res) => {
-  update('orders', req.params.id, { status: 'pending' })
+  const order = findOneBy('orders', 'id = ?', [parseInt(req.params.id)])
+  if (!order) return res.status(404).json({ error: 'order_not_found' })
+  if (order.status !== 'completed') return res.status(400).json({ error: 'order_not_completed' })
+  auditLog(req.user.id, req.user.username, 'order_reopen', 'order', order.id, { table: order.table_number, total: order.total_amount, payment_method: order.payment_method }, req.ip)
+  update('orders', req.params.id, { status: 'pending', payment_method: null, cash_received: null, change_amount: null, cashier_id: null, paid_at: null })
   broadcast('order_reopened', { id: parseInt(req.params.id) })
+  invalidateReportCache()
   res.json({ success: true })
 })
 
@@ -775,11 +860,11 @@ app.post('/api/orders/:id/reopen', auth(['admin', 'cashier']), (req, res) => {
 
 app.post('/api/orders/:id/print', auth(['admin', 'cashier']), (req, res) => {
   const orderId = parseInt(req.params.id)
-  const order = findOne('orders', o => o.id === orderId)
+  const order = findOneBy('orders', 'id = ?', [orderId])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
-  order.items = find('order_items', oi => oi.order_id === order.id)
+  order.items = findBy('order_items', 'order_id = ?', [order.id])
   for (const item of order.items) {
-    const dish = findOne('dishes', d => d.id === item.dish_id)
+    const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
     if (dish) {
       item.dish_name_pt = dish.name_pt
       item.dish_name_en = dish.name_en
@@ -806,7 +891,7 @@ app.get('/api/printers', auth(['admin', 'cashier']), (req, res) => {
 // ── Employees ─────────────────────────────────────────
 
 app.get('/api/employees', auth(['admin', 'cashier']), (req, res) => {
-  const rows = find('employees', () => true).map(e => ({ id: e.id, username: e.username, name: e.name, role: e.role, status: e.status, created_at: e.created_at }))
+  const rows = findBy('employees', '1=1', []).map(e => ({ id: e.id, username: e.username, name: e.name, role: e.role, status: e.status, created_at: e.created_at }))
   rows.sort((a, b) => a.id - b.id)
   res.json(rows)
 })
@@ -814,11 +899,12 @@ app.get('/api/employees', auth(['admin', 'cashier']), (req, res) => {
 app.post('/api/employees', auth(['admin']), (req, res) => {
   const { username, name, role, status, password: plainPwd } = req.body
   if (!username || !name) return res.status(400).json({ message: '工号和姓名为必填项' })
-  if (findOne('employees', e => e.username === username)) return res.status(400).json({ message: '工号已存在' })
+  if (findOneBy('employees', 'username = ?', [username])) return res.status(400).json({ message: '工号已存在' })
   const emp = insert('employees', {
     username, password: hashPassword(plainPwd || '123456'), name, role: role || 'waiter', status: status || 'active',
     created_at: new Date().toISOString()
   })
+  auditLog(req.user.id, req.user.username, 'employee_create', 'employee', emp.id, { new_username: username, new_name: name, role: role || 'waiter' }, req.ip)
   res.json({ id: emp.id })
 })
 
@@ -831,103 +917,149 @@ app.put('/api/employees/:id', auth(['admin']), (req, res) => {
   if (plainPwd) {
     fields.password = hashPassword(plainPwd)
     // 修改密码时递增 token_version，使该员工当前会话立即失效
-    const emp = findOne('employees', e => e.id === parseInt(req.params.id))
+    const emp = findOneBy('employees', 'id = ?', [parseInt(req.params.id)])
     if (emp) fields.token_version = (emp.token_version || 0) + 1
   }
   if (Object.keys(fields).length === 0) return res.status(400).json({ message: '没有需要更新的字段' })
   update('employees', req.params.id, fields)
+  auditLog(req.user.id, req.user.username, 'employee_update', 'employee', req.params.id, { updated_fields: Object.keys(fields).filter(k => k !== 'password' && k !== 'token_version'), password_changed: !!plainPwd }, req.ip)
   res.json({ success: true })
 })
 
 // ── Waiters (for tablet selection) ───────────────────
 
 app.get('/api/waiters', auth(), (req, res) => {
-  const rows = find('employees', e => e.role === 'waiter' && e.status === 'active')
+  const rows = findBy('employees', 'role = ? AND status = ?', ['waiter', 'active'])
     .map(e => ({ id: e.id, username: e.username, name: e.name }))
   res.json(rows)
 })
 
 // ── Reports ───────────────────────────────────────────
 
+// Category label for order items whose dish has been deleted
+const DELETED_DISH_CATEGORY = '已删除菜品'
+
 app.get('/api/reports/today', auth(['admin', 'cashier']), (req, res) => {
-  const today = new Date().toISOString().slice(0, 10)
-  const completed = find('orders', o => o.status === 'completed' && o.paid_at?.startsWith(today))
-  res.json({ count: completed.length, revenue: completed.reduce((s, o) => s + o.total_amount, 0) })
+  const data = getCachedReport('today', () => {
+    const today = new Date().toISOString().slice(0, 10)
+    const completed = findBy('orders', 'status = ? AND paid_at LIKE ?', ['completed', today + '%'])
+    return { count: completed.length, revenue: completed.reduce((s, o) => s + o.total_amount, 0) }
+  })
+  res.json(data)
 })
 
 app.get('/api/reports/monthly', auth(['admin', 'cashier']), (req, res) => {
-  const month = new Date().toISOString().slice(0, 7)
-  const completed = find('orders', o => o.status === 'completed' && o.paid_at?.startsWith(month))
-  res.json({ count: completed.length, revenue: completed.reduce((s, o) => s + o.total_amount, 0) })
+  const data = getCachedReport('monthly', () => {
+    const month = new Date().toISOString().slice(0, 7)
+    const completed = findBy('orders', 'status = ? AND paid_at LIKE ?', ['completed', month + '%'])
+    return { count: completed.length, revenue: completed.reduce((s, o) => s + o.total_amount, 0) }
+  })
+  res.json(data)
 })
 
 app.get('/api/reports/monthly-trend', auth(['admin', 'cashier']), (req, res) => {
-  const days = []
-  const now = new Date()
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now)
-    d.setDate(d.getDate() - i)
-    days.push(d.toISOString().slice(0, 10))
-  }
-  const data = days.map(day => {
-    const orders = find('orders', o => o.status === 'completed' && o.paid_at?.startsWith(day))
-    return { date: day, revenue: orders.reduce((s, o) => s + o.total_amount, 0), count: orders.length }
+  const data = getCachedReport('monthly-trend', () => {
+    const days = []
+    const now = new Date()
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now)
+      d.setDate(d.getDate() - i)
+      days.push(d.toISOString().slice(0, 10))
+    }
+    // 一次性查询本月所有已完成订单，避免循环内 30 次全表扫描
+    const monthStart = days[0]
+    const allCompleted = findBy('orders', 'status = ? AND paid_at >= ?', ['completed', monthStart])
+    // 按日期分桶
+    const dayMap = {}
+    for (const o of allCompleted) {
+      const day = (o.paid_at || '').slice(0, 10)
+      if (!dayMap[day]) dayMap[day] = { revenue: 0, count: 0 }
+      dayMap[day].revenue += o.total_amount
+      dayMap[day].count++
+    }
+    return days.map(date => ({
+      date,
+      revenue: dayMap[date]?.revenue || 0,
+      count: dayMap[date]?.count || 0,
+    }))
   })
   res.json(data)
 })
 
 app.get('/api/reports/category-pie', auth(['admin', 'cashier']), (req, res) => {
-  // 按点单次数统计：每个菜品属于多个分类时，每个分类各计 1 次
-  const completedOrders = find('orders', o => o.status === 'completed')
-  const catMap = {}
-  for (const o of completedOrders) {
-    const items = find('order_items', oi => oi.order_id === o.id)
-    for (const item of items) {
-      const dish = findOne('dishes', d => d.id === item.dish_id)
-      const cats = (dish?.category || '其他').split(/[,，]/).map(c => c.trim()).filter(Boolean)
-      for (const cat of cats) {
-        catMap[cat] = (catMap[cat] || 0) + 1
+  const data = getCachedReport('category-pie', () => {
+    // 按销售金额统计：每个菜品属于多个分类时，每个分类各计该菜品销售额
+    // 一次性加载所有菜品到 Map，避免 N+1 查询
+    const allDishes = findBy('dishes', '1=1', [])
+    const dishMap = {}
+    for (const d of allDishes) dishMap[d.id] = d
+
+    const completedOrders = findBy('orders', 'status = ?', ['completed'])
+    const catMap = {}
+    for (const o of completedOrders) {
+      const items = findBy('order_items', 'order_id = ?', [o.id])
+      for (const item of items) {
+        if (item.item_status === 'cancelled') continue
+        const dish = dishMap[item.dish_id]
+        const cats = (dish?.category || DELETED_DISH_CATEGORY).split(/[,，]/).map(c => c.trim()).filter(Boolean)
+        for (const cat of cats) {
+          catMap[cat] = (catMap[cat] || 0) + item.subtotal
+        }
       }
     }
-  }
-  const result = Object.entries(catMap).map(([category, count]) => ({ category, count }))
-  res.json(result)
+    return Object.entries(catMap).map(([category, value]) => ({ category, value: Math.round(value * 100) / 100 }))
+  })
+  res.json(data)
 })
 
 app.get('/api/reports/payment-pie', auth(['admin', 'cashier']), (req, res) => {
-  const completed = find('orders', o => o.status === 'completed')
-  const map = {}
-  completed.forEach(o => { map[o.payment_method] = (map[o.payment_method] || 0) + 1 })
-  res.json(Object.entries(map).map(([name, value]) => ({ name, value })))
+  const data = getCachedReport('payment-pie', () => {
+    const completed = findBy('orders', 'status = ?', ['completed'])
+    const map = {}
+    completed.forEach(o => { map[o.payment_method] = (map[o.payment_method] || 0) + 1 })
+    return Object.entries(map).map(([name, value]) => ({ name, value }))
+  })
+  res.json(data)
 })
 
 app.get('/api/reports/dishes-top', auth(['admin', 'cashier']), (req, res) => {
-  const completedOrders = find('orders', o => o.status === 'completed')
-  const dishMap = {}
-  for (const o of completedOrders) {
-    const items = find('order_items', oi => oi.order_id === o.id)
-    for (const item of items) {
-      if (!dishMap[item.dish_id]) {
-        const dish = findOne('dishes', d => d.id === item.dish_id)
-        dishMap[item.dish_id] = { id: item.dish_id, name: dish?.name || item.dish_name, qty: 0 }
+  const data = getCachedReport('dishes-top', () => {
+    // 一次性加载所有菜品到 Map，避免 N+1 查询
+    const allDishes = findBy('dishes', '1=1', [])
+    const dishMap = {}
+    for (const d of allDishes) dishMap[d.id] = d
+
+    const completedOrders = findBy('orders', 'status = ?', ['completed'])
+    const dishCountMap = {}
+    for (const o of completedOrders) {
+      const items = findBy('order_items', 'order_id = ?', [o.id])
+      for (const item of items) {
+        if (item.item_status === 'cancelled') continue
+        if (!dishCountMap[item.dish_id]) {
+          const dish = dishMap[item.dish_id]
+          dishCountMap[item.dish_id] = { id: item.dish_id, name: dish?.name || item.dish_name, qty: 0 }
+        }
+        dishCountMap[item.dish_id].qty += item.quantity
       }
-      dishMap[item.dish_id].qty += item.quantity
     }
-  }
-  const sorted = Object.values(dishMap).sort((a, b) => b.qty - a.qty).slice(0, 10)
-  res.json(sorted)
+    return Object.values(dishCountMap).sort((a, b) => b.qty - a.qty).slice(0, 10)
+  })
+  res.json(data)
 })
 
 app.get('/api/reports/waiter-rank', auth(['admin', 'cashier']), (req, res) => {
-  const completed = find('orders', o => o.status === 'completed')
-  const map = {}
-  completed.forEach(o => {
-    const name = o.waiter_name || '未知'
-    if (!map[name]) map[name] = { name, orders: 0, revenue: 0 }
-    map[name].orders++
-    map[name].revenue += o.total_amount
+  const data = getCachedReport('waiter-rank', () => {
+    const completed = findBy('orders', 'status = ?', ['completed'])
+    const map = {}
+    completed.forEach(o => {
+      const name = o.waiter_name || '未知'
+      if (!map[name]) map[name] = { name, orders: 0, revenue: 0 }
+      map[name].orders++
+      map[name].revenue += o.total_amount
+    })
+    return Object.values(map).sort((a, b) => b.revenue - a.revenue)
   })
-  res.json(Object.values(map).sort((a, b) => b.revenue - a.revenue))
+  res.json(data)
 })
 
 // ── Database Backup / Restore (admin only) ────────────
@@ -974,11 +1106,39 @@ app.post('/api/db/restore', auth(['admin']), (req, res) => {
   try {
     if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, safetyPath)
     fs.copyFileSync(bakPath, dbPath)
+    auditLog(req.user.id, req.user.username, 'db_restore', 'database', name || 'default_bak', { backup_name: name || 'data.sqlite.bak' }, req.ip)
     res.json({ success: true, message_code: 'restore_completed' })
   } catch (e) {
     res.status(500).json({ error: 'restore_failed' })
   }
 })
+
+// ── Audit Logs (admin only) ────────────────────────────
+
+app.get('/api/audit-logs', auth(['admin']), (req, res) => {
+  const { action, target_type, start, end, page = '1', pageSize = '50' } = req.query
+  let where = []
+  let params = []
+  if (action) { where.push('action = ?'); params.push(action) }
+  if (target_type) { where.push('target_type = ?'); params.push(target_type) }
+  if (start) { where.push('created_at >= ?'); params.push(start) }
+  if (end) { where.push('created_at <= ?'); params.push(end + 'T23:59:59') }
+  const whereClause = where.length ? where.join(' AND ') : '1=1'
+  const total = findBy('audit_logs', whereClause, params).length
+  const p = Math.max(1, parseInt(page))
+  const ps = Math.max(1, Math.min(200, parseInt(pageSize)))
+  const offset = (p - 1) * ps
+  const logs = _allAudit(whereClause, params, ps, offset)
+  res.json({ logs, total, page: p, pageSize: ps })
+})
+
+function _allAudit(where, params, limit, offset) {
+  const rows = findBy('audit_logs', where + ' ORDER BY id DESC LIMIT ? OFFSET ?', [...params, limit, offset])
+  for (const r of rows) {
+    try { r.details = JSON.parse(r.details) } catch {}
+  }
+  return rows
+}
 
 // ── WebSocket Server ──────────────────────────────────
 

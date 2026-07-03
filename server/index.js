@@ -8,12 +8,25 @@ const jwt = require('jsonwebtoken')
 const os = require('os')
 const WebSocket = require('ws')
 const { init, find, findOne, findBy, findOneBy, removeBy, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction, auditLog } = require('./db')
-const { generateReceipt, generateKitchenTicket, formatReceiptText, printText, printKitchen, listPrinters, PRINTER_NAME, KITCHEN_PRINTER_NAME } = require('./printer')
+const { generateReceipt, generateKitchenTicket, formatReceiptText, printText, printKitchen, listPrinters, getPrinterDetails, openCashDrawer, PRINTER_NAME, KITCHEN_PRINTER_NAME } = require('./printer')
 
-const JWT_SECRET = process.env.JWT_SECRET || 'moz-restaurant-jwt-secret-2024-fixed-key'
+// Receipt branding
+const RECEIPT_LOGO_PATH = path.join(__dirname, 'logo', 'logobw.png')
+const RECEIPT_TITLE = ''
+
+const JWT_SECRET = process.env.JWT_SECRET || (() => {
+  const generated = crypto.randomBytes(32).toString('hex')
+  console.warn('[security] ⚠️  JWT_SECRET 未设置，已生成随机密钥:', generated.slice(0, 16) + '...')
+  console.warn('[security] ⚠️  服务重启后所有已登录客户端需重新登录。生产环境请通过环境变量设置固定 JWT_SECRET。')
+  return generated
+})()
 const PORT = process.env.PORT || 3000
 
 const app = express()
+// CORS: 本系统仅在内网 LAN 环境运行，所有来源一律放行。
+// 这是设计决策而非疏忽 — APK WebView 可能发送任意 origin，
+// 且内网 IP 在部署时动态变化，无法预先白名单。
+// 如果未来需要暴露到公网，必须改为白名单模式。
 app.use(cors({
   origin: function(origin, callback) {
     if (!origin) return callback(null, true) // 允许无 origin（如 curl、APK）
@@ -217,9 +230,9 @@ app.post('/api/dishes', auth(['admin', 'cashier']), (req, res) => {
       const arr = JSON.parse(imagesVal)
       if (Array.isArray(arr) && arr.length) {
         // cover = first image
-        var coverImage = arr[0]
+        coverImage = arr[0]
       }
-    } catch {}
+    } catch { /* JSON parse failed — ignore malformed images field */ }
   }
   if (!coverImage) coverImage = image || ''
   const allDishes = findBy('dishes', '1=1', [])
@@ -250,7 +263,7 @@ app.put('/api/dishes/:id', auth(['admin', 'cashier']), (req, res) => {
           if (oldDish) {
             let oldImages = []
             if (oldDish.images) {
-              try { oldImages = JSON.parse(oldDish.images) } catch {}
+              try { oldImages = JSON.parse(oldDish.images) } catch (e) { console.error('[dishes:update] oldImages parse error:', e.message) }
             }
             if (!oldImages.length && oldDish.image) oldImages = [oldDish.image]
             const newSet = new Set(Array.isArray(newArr) ? newArr : [])
@@ -258,7 +271,7 @@ app.put('/api/dishes/:id', auth(['admin', 'cashier']), (req, res) => {
               if (!newSet.has(oldImg)) safeDeleteImage(oldImg)
             }
           }
-        } catch {}
+        } catch (e) { console.error('[dishes:update] images cleanup error:', e.message) }
       }
       else fields[k] = req.body[k]
     }
@@ -273,7 +286,7 @@ app.delete('/api/dishes/:id', auth(['admin', 'cashier']), (req, res) => {
   if (dish) {
     let images = []
     if (dish.images) {
-      try { images = JSON.parse(dish.images) } catch {}
+      try { images = JSON.parse(dish.images) } catch (e) { console.error('[dishes:delete] images parse error:', e.message) }
     }
     if (!images.length && dish.image) images = [dish.image]
     for (const img of images) safeDeleteImage(img)
@@ -339,7 +352,7 @@ app.get('/api/flavors', auth(), (req, res) => {
   rows.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id)
   // Parse options JSON for each row
   for (const r of rows) {
-    try { r.options = JSON.parse(r.options) } catch { r.options = [] }
+    try { r.options = JSON.parse(r.options) } catch { r.options = [] /* malformed JSON */ }
   }
   res.json(rows)
 })
@@ -389,7 +402,7 @@ app.get('/api/dishes/:id/flavors', auth(), (req, res) => {
     const flavor = findOne('flavors', f => f.id === df.flavor_id)
     if (flavor) {
       let opts = flavor.options
-      try { opts = JSON.parse(opts) } catch { opts = [] }
+      try { opts = JSON.parse(opts) } catch { opts = [] /* malformed JSON */ }
       result.push({
         id: df.id, flavor_id: flavor.id, required: !!df.required,
         sort_order: df.sort_order,
@@ -502,12 +515,21 @@ app.post('/api/orders', auth(), (req, res) => {
           item.remark_en = dish.remark_en
         }
       }
-      const lang = req.body.lang || 'zh'
-      const ticketLines = generateKitchenTicket(order, 'new', order.items, lang)
+      // 1. Print summary ticket (all items)
+      const ticketLines = generateKitchenTicket(order, 'new', order.items)
       const ticketText = formatReceiptText(ticketLines)
       kitchenPrint = printKitchen(ticketText)
       kitchenPrint.ticket_text = ticketText
+      // 2. Print individual tickets for each item (chef can work per-dish)
       if (kitchenPrint.success) {
+        for (const item of order.items) {
+          const singleLines = generateKitchenTicket(order, 'new', [item], true)
+          const singleText = formatReceiptText(singleLines)
+          const singleResult = printKitchen(singleText)
+          if (!singleResult.success) {
+            console.error('[kitchen-print] 单品厨打失败:', item.dish_name, singleResult.error)
+          }
+        }
         for (const item of order.items) {
           update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
         }
@@ -567,7 +589,6 @@ app.post('/api/orders/:id/submit', auth(), (req, res) => {
   update('orders', req.params.id, { status: 'pending' })
 
   // Kitchen print
-  const lang = req.body.lang || 'zh'
   let kitchenPrint = { success: false }
   try {
     order.items = findBy('order_items', 'order_id = ?', [order.id])
@@ -582,12 +603,22 @@ app.post('/api/orders/:id/submit', auth(), (req, res) => {
         item.remark_en = dish.remark_en
       }
     }
-    const ticketLines = generateKitchenTicket(order, 'new', order.items, lang)
+    // 1. Print summary ticket (all items)
+    const ticketLines = generateKitchenTicket(order, 'new', order.items)
     const ticketText = formatReceiptText(ticketLines)
     kitchenPrint = printKitchen(ticketText)
     kitchenPrint.ticket_text = ticketText
+    // 2. Print individual tickets for each item (chef can work per-dish)
     // Mark all items as printed
     if (kitchenPrint.success) {
+      for (const item of order.items) {
+        const singleLines = generateKitchenTicket(order, 'new', [item], true)
+        const singleText = formatReceiptText(singleLines)
+        const singleResult = printKitchen(singleText)
+        if (!singleResult.success) {
+          console.error('[kitchen-print] 单品厨打失败:', item.dish_name, singleResult.error)
+        }
+      }
       for (const item of order.items) {
         update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
       }
@@ -621,7 +652,7 @@ app.post('/api/orders/:id/add-items', auth(), (req, res) => {
   if (!order) return res.status(404).json({ error: 'order_not_found' })
   if (order.status !== 'pending') return res.status(400).json({ error: 'order_must_be_pending' })
 
-  const { items, lang } = req.body
+  const { items } = req.body
   if (!items?.length) return res.status(400).json({ error: 'items_required' })
 
   const newItems = []
@@ -664,11 +695,21 @@ app.post('/api/orders/:id/add-items', auth(), (req, res) => {
   // Print addon kitchen ticket
   let kitchenPrint = { success: false }
   try {
-    const ticketLines = generateKitchenTicket(order, 'addon', newItems, lang || 'zh')
+    // 1. Print summary addon ticket (all new items)
+    const ticketLines = generateKitchenTicket(order, 'addon', newItems)
     const ticketText = formatReceiptText(ticketLines)
     kitchenPrint = printKitchen(ticketText)
     kitchenPrint.ticket_text = ticketText
+    // 2. Print individual tickets for each new item
     if (kitchenPrint.success) {
+      for (const item of newItems) {
+        const singleLines = generateKitchenTicket(order, 'addon', [item], true)
+        const singleText = formatReceiptText(singleLines)
+        const singleResult = printKitchen(singleText)
+        if (!singleResult.success) {
+          console.error('[kitchen-addon] 单品厨打失败:', item.dish_name, singleResult.error)
+        }
+      }
       for (const item of newItems) {
         update('order_items', item.id, { kitchen_status: 'printed', printed_qty: item.quantity })
       }
@@ -690,7 +731,7 @@ app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (r
   const order = findOneBy('orders', 'id = ?', [orderId])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
 
-  const { item_id, cancel_qty, reason, lang } = req.body
+  const { item_id, cancel_qty, reason } = req.body
   if (!item_id) return res.status(400).json({ error: 'item_id_required' })
 
   const item = findOneBy('order_items', 'id = ? AND order_id = ?', [parseInt(item_id), orderId])
@@ -733,7 +774,7 @@ app.post('/api/orders/:id/cancel-item', auth(['admin', 'cashier', 'waiter']), (r
 
   let kitchenPrint = { success: false }
   try {
-    const ticketLines = generateKitchenTicket(order, 'cancel', [cancelItem], lang || 'zh')
+    const ticketLines = generateKitchenTicket(order, 'cancel', [cancelItem])
     const ticketText = formatReceiptText(ticketLines)
     kitchenPrint = printKitchen(ticketText)
     kitchenPrint.ticket_text = ticketText
@@ -758,7 +799,6 @@ app.post('/api/orders/:id/kitchen-reprint', auth(['admin', 'cashier']), (req, re
   const order = findOneBy('orders', 'id = ?', [orderId])
   if (!order) return res.status(404).json({ error: 'order_not_found' })
 
-  const { lang } = req.body || {}
   order.items = findBy('order_items', 'order_id = ? AND item_status != ?', [orderId, 'cancelled'])
   if (!order.items.length) return res.status(400).json({ error: 'no_printable_items' })
 
@@ -776,7 +816,7 @@ app.post('/api/orders/:id/kitchen-reprint', auth(['admin', 'cashier']), (req, re
 
   let kitchenPrint = { success: false }
   try {
-    const ticketLines = generateKitchenTicket(order, 'reprint', order.items, lang || 'zh')
+    const ticketLines = generateKitchenTicket(order, 'reprint', order.items)
     const ticketText = formatReceiptText(ticketLines)
     kitchenPrint = printKitchen(ticketText)
     kitchenPrint.ticket_text = ticketText
@@ -805,7 +845,7 @@ app.delete('/api/orders/:id', auth(['admin']), (req, res) => {
 })
 
 app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
-  const { paymentMethod, cashReceived, change, lang } = req.body
+  const { paymentMethod, cashReceived, change } = req.body
   const orderId = parseInt(req.params.id)
   const orderCheck = findOneBy('orders', 'id = ?', [orderId])
   if (!orderCheck) return res.status(404).json({ error: 'order_not_found' })
@@ -830,10 +870,16 @@ app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
           item.dish_name_en = dish.name_en
         }
       }
-      const receiptLines = generateReceipt(order, lang || 'zh')
+      const receiptLines = generateReceipt(order)
       const receiptText = formatReceiptText(receiptLines)
-      printResult = printText(receiptText)
+      printResult = printText(receiptText, undefined, { logoPath: RECEIPT_LOGO_PATH, title: RECEIPT_TITLE })
       printResult.ticket_text = receiptText
+
+      // Auto-open cash drawer for cash payments (not POS)
+      if (paymentMethod === 'cash') {
+        const drawerResult = openCashDrawer()
+        printResult.cash_drawer = drawerResult
+      }
     }
   } catch (e) {
     printResult = { success: false, error: e.message }
@@ -871,9 +917,9 @@ app.post('/api/orders/:id/print', auth(['admin', 'cashier']), (req, res) => {
     }
   }
   try {
-    const receiptLines = generateReceipt(order, req.query.lang || 'zh')
+    const receiptLines = generateReceipt(order)
     const receiptText = formatReceiptText(receiptLines)
-    const printRes = printText(receiptText)
+    const printRes = printText(receiptText, undefined, { logoPath: RECEIPT_LOGO_PATH, title: RECEIPT_TITLE })
     res.json({ success: true, printer: PRINTER_NAME || '(Default Printer)', ticket_text: receiptText, ...printRes })
   } catch (e) {
     res.status(500).json({ error: 'print_failed', detail: e.message })
@@ -881,10 +927,12 @@ app.post('/api/orders/:id/print', auth(['admin', 'cashier']), (req, res) => {
 })
 
 app.get('/api/printers', auth(['admin', 'cashier']), (req, res) => {
+  const details = getPrinterDetails()
   res.json({
-    printers: listPrinters(),
-    current: PRINTER_NAME || '(Default Printer)',
-    kitchen: KITCHEN_PRINTER_NAME || PRINTER_NAME || '(Default Printer)',
+    printers: details.printers,  // Array of { name, port, ip, online, role }
+    current: details.receipt || PRINTER_NAME || '(Default Printer)',
+    kitchen: details.kitchen || KITCHEN_PRINTER_NAME || PRINTER_NAME || '(Default Printer)',
+    raw: listPrinters(),  // Keep raw text output for backwards compatibility
   })
 })
 

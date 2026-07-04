@@ -293,6 +293,16 @@ describe('generateReceipt — 小票生成', () => {
     assert.ok(text.includes('找零'))
   })
 
+  it('税费计算正确（莫桑比克 IVA 16%）', () => {
+    // New formula (additive): subtotal=450, tax=450×0.16=72.00, total=450+72=522.00
+    const lines = generateReceipt(sampleOrder)
+    const text = formatReceiptText(lines)
+    assert.ok(text.includes('税费/IVA'), '应包含税费标签')
+    assert.ok(text.includes('不含税/Sem IVA'), '应包含不含税标签')
+    assert.ok(text.includes('72.00'), '税费 = 450 × 0.16 = 72.00')
+    assert.ok(text.includes('522.00'), '合计 = 450 + 72 = 522.00')
+  })
+
   it('取消的菜品不显示', () => {
     const orderWithCancel = {
       ...sampleOrder,

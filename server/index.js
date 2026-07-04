@@ -8,7 +8,7 @@ const jwt = require('jsonwebtoken')
 const os = require('os')
 const WebSocket = require('ws')
 const { init, find, findOne, findBy, findOneBy, removeBy, insert, update, remove, removeWhere, save, listBackups, hashPassword, verifyPassword, runTransaction, auditLog } = require('./db')
-const { generateReceipt, generateKitchenTicket, formatReceiptText, printText, printKitchen, listPrinters, getPrinterDetails, openCashDrawer, PRINTER_NAME, KITCHEN_PRINTER_NAME } = require('./printer')
+const { generateReceipt, generateKitchenTicket, formatReceiptText, printText, printKitchen, listPrinters, getPrinterDetails, openCashDrawer, PRINTER_NAME, KITCHEN_PRINTER_NAME, TAX_RATE } = require('./printer')
 
 // Receipt branding
 const RECEIPT_LOGO_PATH = path.join(__dirname, 'logo', 'logobw.png')
@@ -850,41 +850,52 @@ app.post('/api/orders/:id/checkout', auth(['admin', 'cashier']), (req, res) => {
   const orderCheck = findOneBy('orders', 'id = ?', [orderId])
   if (!orderCheck) return res.status(404).json({ error: 'order_not_found' })
   if (orderCheck.status !== 'pending') return res.status(400).json({ error: 'order_not_pending' })
-  update('orders', orderId, {
-    status: 'completed', payment_method: paymentMethod,
-    cash_received: cashReceived || null, change_amount: change || null,
-    cashier_id: req.user.id, paid_at: new Date().toISOString()
-  })
 
-  // Auto-print receipt
+  // Calculate tax-inclusive total (tax is additive: subtotal + 16% IVA)
+  const subtotal = orderCheck.total_amount
+  const taxAmount = subtotal * TAX_RATE
+  const grossTotal = subtotal + taxAmount
+
+  // Recalculate change based on tax-inclusive total for cash payments
+  let finalChange = change || null
+  if (paymentMethod === 'cash' && cashReceived != null) {
+    finalChange = cashReceived - grossTotal
+  }
+
+  // Auto-print receipt BEFORE updating DB (so generateReceipt uses pre-tax total_amount)
   let printResult = { success: false, error: 'No order found' }
   try {
-    const order = findOneBy('orders', 'id = ?', [orderId])
-    if (order) {
-      order.items = findBy('order_items', 'order_id = ?', [order.id])
-      // Enrich items with translated dish names from dishes table
-      for (const item of order.items) {
-        const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
-        if (dish) {
-          item.dish_name_pt = dish.name_pt
-          item.dish_name_en = dish.name_en
-        }
+    orderCheck.items = findBy('order_items', 'order_id = ?', [orderId])
+    // Enrich items with translated dish names from dishes table
+    for (const item of orderCheck.items) {
+      const dish = findOneBy('dishes', 'id = ?', [item.dish_id])
+      if (dish) {
+        item.dish_name_pt = dish.name_pt
+        item.dish_name_en = dish.name_en
       }
-      const receiptLines = generateReceipt(order)
-      const receiptText = formatReceiptText(receiptLines)
-      printResult = printText(receiptText, undefined, { logoPath: RECEIPT_LOGO_PATH, title: RECEIPT_TITLE })
-      printResult.ticket_text = receiptText
+    }
+    const receiptLines = generateReceipt(orderCheck)
+    const receiptText = formatReceiptText(receiptLines)
+    printResult = printText(receiptText, undefined, { logoPath: RECEIPT_LOGO_PATH, title: RECEIPT_TITLE })
+    printResult.ticket_text = receiptText
 
-      // Auto-open cash drawer for cash payments (not POS)
-      if (paymentMethod === 'cash') {
-        const drawerResult = openCashDrawer()
-        printResult.cash_drawer = drawerResult
-      }
+    // Auto-open cash drawer for cash payments
+    if (paymentMethod === 'cash') {
+      const drawerResult = openCashDrawer()
+      printResult.cash_drawer = drawerResult
     }
   } catch (e) {
     printResult = { success: false, error: e.message }
     console.error('Print exception:', e.message)
   }
+
+  // Update DB AFTER receipt is generated (total_amount → tax-inclusive for accurate reports)
+  update('orders', orderId, {
+    status: 'completed', payment_method: paymentMethod,
+    cash_received: cashReceived || null, change_amount: finalChange,
+    total_amount: grossTotal,
+    cashier_id: req.user.id, paid_at: new Date().toISOString()
+  })
 
   broadcast('order_checkout', { id: orderId, paymentMethod })
   invalidateReportCache()
@@ -896,7 +907,12 @@ app.post('/api/orders/:id/reopen', auth(['admin', 'cashier']), (req, res) => {
   if (!order) return res.status(404).json({ error: 'order_not_found' })
   if (order.status !== 'completed') return res.status(400).json({ error: 'order_not_completed' })
   auditLog(req.user.id, req.user.username, 'order_reopen', 'order', order.id, { table: order.table_number, total: order.total_amount, payment_method: order.payment_method }, req.ip)
-  update('orders', req.params.id, { status: 'pending', payment_method: null, cash_received: null, change_amount: null, cashier_id: null, paid_at: null })
+  // Restore pre-tax total_amount (completed orders have tax-inclusive total)
+  const preTaxTotal = order.total_amount / (1 + TAX_RATE)
+  update('orders', req.params.id, {
+    status: 'pending', payment_method: null, cash_received: null, change_amount: null, cashier_id: null, paid_at: null,
+    total_amount: Math.round(preTaxTotal * 100) / 100
+  })
   broadcast('order_reopened', { id: parseInt(req.params.id) })
   invalidateReportCache()
   res.json({ success: true })
@@ -915,6 +931,10 @@ app.post('/api/orders/:id/print', auth(['admin', 'cashier']), (req, res) => {
       item.dish_name_pt = dish.name_pt
       item.dish_name_en = dish.name_en
     }
+  }
+  // For completed orders, total_amount is tax-inclusive — restore pre-tax for receipt
+  if (order.status === 'completed') {
+    order.total_amount = order.total_amount / (1 + TAX_RATE)
   }
   try {
     const receiptLines = generateReceipt(order)

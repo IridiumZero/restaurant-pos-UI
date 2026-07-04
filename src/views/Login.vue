@@ -59,7 +59,22 @@ const router = useRouter()
 const formRef = ref(null)
 const loading = ref(false)
 const serverStatus = ref('checking') // 'checking' | 'ok' | 'fail' | ''
-const serverUrl = ref(localStorage.getItem('serverUrl') || location.origin || 'http://localhost:3000')
+function normalizeUrl(url) {
+  if (!url) return url
+  // 开发环境下，前端端口（5173/5174等）≠ 后端端口（3000），强制纠正
+  if (url.includes('localhost:') || url.includes('127.0.0.1:')) {
+    return 'http://localhost:3000'
+  }
+  return url
+}
+
+const serverUrl = ref(
+  normalizeUrl(localStorage.getItem('serverUrl')) ||
+  (location.origin.includes('localhost:') || location.origin.includes('127.0.0.1:')
+    ? 'http://localhost:3000'
+    : location.origin) ||
+  'http://localhost:3000'
+)
 
 function isCapacitorApp() {
   return !!(window.Capacitor) || location.origin.startsWith('capacitor://')
@@ -76,37 +91,37 @@ async function probeUrl(url) {
 
 async function detectServer() {
   serverStatus.value = 'checking'
+  serverUrl.value = normalizeUrl(serverUrl.value)
   const saved = serverUrl.value.replace(/\/+$/, '')
 
-  // 1. Try saved URL
-  if (await probeUrl(saved)) {
-    serverStatus.value = 'ok'
-    return
+  // In browser (not Capacitor), try location.origin FIRST — the page was served
+  // from the server, so origin IS the correct server URL. This avoids stale
+  // localStorage caching from a previous session with a different IP.
+  if (!isCapacitorApp()) {
+    const origin = normalizeUrl(location.origin)
+    if (await probeUrl(origin)) {
+      serverUrl.value = origin
+      localStorage.setItem('serverUrl', origin)
+      serverStatus.value = 'ok'
+      return
+    }
   }
 
-  // 2. Fallback to location.origin (only in browser, not Capacitor)
-  if (!isCapacitorApp()) {
-    const origin = location.origin
-    if (origin && origin !== saved) {
-      console.log(`[Login] 缓存地址 ${saved} 不可达，尝试回退到 ${origin}`)
-      if (await probeUrl(origin)) {
-        serverUrl.value = origin
-        localStorage.setItem('serverUrl', origin)
-        serverStatus.value = 'ok'
-        console.log(`[Login] 已自动切换到 ${origin}`)
-        return
-      }
+  // 2. Try saved URL (essential for Capacitor/APK, fallback for browser)
+  if (saved && saved !== normalizeUrl(location.origin)) {
+    if (await probeUrl(saved)) {
+      serverUrl.value = saved
+      serverStatus.value = 'ok'
+      return
     }
   }
 
   // 3. Try localhost:3000 as last resort
   if (saved !== 'http://localhost:3000' && !saved.includes(location.hostname)) {
-    console.log('[Login] 尝试 localhost:3000')
     if (await probeUrl('http://localhost:3000')) {
       serverUrl.value = 'http://localhost:3000'
       localStorage.setItem('serverUrl', 'http://localhost:3000')
       serverStatus.value = 'ok'
-      console.log('[Login] 已自动切换到 http://localhost:3000')
       return
     }
   }

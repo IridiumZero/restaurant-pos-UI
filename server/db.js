@@ -485,7 +485,7 @@ function _saveTimestampedBackup() {
       await fs.promises.copyFile(DB_PATH, dest)
       // Rotate old backups
       _rotateBackups()
-    } catch {}
+    } catch (e) { console.error('[backup] timestamped backup failed:', e.message) }
   })
 }
 
@@ -497,7 +497,7 @@ function _rotateBackups() {
     while (files.length > MAX_BACKUPS) {
       fs.unlinkSync(path.join(BACKUPS_DIR, files.shift()))
     }
-  } catch {}
+  } catch (e) { console.error('[backup] rotation cleanup failed:', e.message) }
 }
 
 function listBackups() {

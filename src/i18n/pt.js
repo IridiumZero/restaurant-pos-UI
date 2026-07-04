@@ -195,6 +195,8 @@ export default {
     checkoutSuccess: 'Pagamento concluído',
     receiptPrinted: 'Recibo impresso',
     printFailed: 'Falha ao imprimir: {error}',
+    cashDrawerOpened: 'Gaveta de dinheiro aberta',
+    cashDrawerFailed: 'Gaveta não abriu, por favor abra manualmente',
     receiptTitle: 'Recibo',
     filterByWaiter: 'Filtrar por garçom',
     filterByTable: 'Filtrar por mesa',

@@ -16,7 +16,7 @@ const routes = [
       { path: 'employees', name: 'EmployeeManage', component: () => import('./views/EmployeeManage.vue') },
     ],
   },
-  { path: '/', redirect: '/order' },
+  { path: '/', redirect: '/login' },
   { path: '/:pathMatch(.*)*', redirect: '/order' },
 ]
 

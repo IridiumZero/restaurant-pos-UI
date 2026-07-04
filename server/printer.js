@@ -8,7 +8,7 @@ const KITCHEN_PRINTER_NAME = process.env.KITCHEN_PRINTER_NAME || ''
 
 // Horizontal position tuning (negative = shift left, positive = shift right)
 // ~10% of 80mm paper ≈ 30 hundredths-of-inch. Adjust via env if needed.
-const RECEIPT_H_OFFSET = parseInt(process.env.RECEIPT_H_OFFSET) || -30
+const RECEIPT_H_OFFSET = parseInt(process.env.RECEIPT_H_OFFSET) || -40
 const RECEIPT_BODY_OFFSET = parseInt(process.env.RECEIPT_BODY_OFFSET) || 0
 
 // Receipt printer: 80mm paper
@@ -30,12 +30,17 @@ const BI = {
   time:        '时间/Hora',
   payment:     '付款/Pagamento',
   total:       '合计/Total',
+  tax:         '税费/IVA (16%)',
+  subtotal:    '不含税/Sem IVA',
   received:    '收款/Recebido',
   change:      '找零/Troco',
   thankYou:    '谢谢惠顾! Obrigado!',
   totalItems:  '总数/Itens',
   payments:    { '现金': 'Dinheiro', 'POS机': 'POS', 'cash': 'Dinheiro', 'pos': 'POS' },
 }
+
+// Mozambique VAT rate (configurable)
+const TAX_RATE = parseFloat(process.env.TAX_RATE) || 0.16
 
 function isPaymentCash(method) {
   return method === '现金' || method === 'cash'
@@ -174,7 +179,16 @@ function generateReceipt(order) {
   }
   lines.push(sep)
   if (totalQty > 0) lines.push(padLR(`${BI.totalItems}: ${totalQty}`, '', W))
-  lines.push(padLR(`${BI.total}:`, `${Number(order.total_amount).toFixed(2)} MT`, W))
+
+  // Tax breakdown (Mozambique IVA 16%) — additive: tax is ON TOP of subtotal
+  const subtotal = Number(order.total_amount)
+  const taxAmount = subtotal * TAX_RATE
+  const grossTotal = subtotal + taxAmount
+
+  lines.push(padLR(`${BI.subtotal}:`, `${subtotal.toFixed(2)} MT`, W))
+  lines.push(padLR(`${BI.tax}:`, `${taxAmount.toFixed(2)} MT`, W))
+  lines.push(sep)
+  lines.push(padLR(`${BI.total}:`, `${grossTotal.toFixed(2)} MT`, W))
 
   if (isPaymentCash(order.payment_method) && order.cash_received) {
     lines.push(padLR(`${BI.received}:`, `${Number(order.cash_received).toFixed(2)} MT`, W))
@@ -338,8 +352,14 @@ function getPrinterIP(printerName) {
     ).trim()
     // XP-80C network printers use port names like "IP_192.168.5.25"
     const match = portName.match(/(\d+\.\d+\.\d+\.\d+)/)
-    return match ? match[1] : null
-  } catch {
+    const ip = match ? match[1] : null
+    if (!ip) {
+      console.error('[cash-drawer] Port name does not contain IP:', portName || '(empty)')
+      console.error('[cash-drawer] Cash drawer requires network printer (TCP/IP), not USB/COM')
+    }
+    return ip
+  } catch (e) {
+    console.error('[cash-drawer] Get-Printer failed for:', printerName, '|', e.message)
     return null
   }
 }
@@ -347,28 +367,31 @@ function getPrinterIP(printerName) {
 // ── Cash drawer control ─────────────────────────────────
 // ESC/POS command: ESC p m t1 t2
 // m=0: drawer kick connector pin 2
-// t1=25: pulse ON  = 25 × 2ms = 50ms
-// t2=250: pulse OFF = 250 × 2ms = 500ms
+// t1=50: pulse ON  = 50 × 2ms = 100ms
+// t2=50: pulse OFF = 50 × 2ms = 100ms
 // Sent via raw TCP to printer port 9100 (bypasses print driver)
 
 function openCashDrawer(printerName) {
   const name = printerName || resolvePrinterName()
   if (!name) {
-    console.error('[cash-drawer] No printer found')
-    return { success: false, error: 'No printer found' }
+    console.error('[cash-drawer] No printer found — set PRINTER_NAME env var or ensure printer is installed')
+    return { success: false, error: 'No printer found — set PRINTER_NAME or install printer' }
   }
+  console.log('[cash-drawer] Resolved printer:', name)
 
   const ip = getPrinterIP(name)
   if (!ip) {
     console.error('[cash-drawer] Could not resolve printer IP for:', name)
-    return { success: false, error: `Could not resolve printer IP for: ${name}` }
+    console.error('[cash-drawer] → Cash drawer requires a network printer with TCP/IP port (e.g. IP_192.168.x.x)')
+    return { success: false, error: `Could not resolve printer IP for: ${name} (network printer required)` }
   }
+  console.log('[cash-drawer] Resolved IP:', ip)
 
   // Write PowerShell script to temp file for reliable execution
   const psScript = [
     `$c = New-Object System.Net.Sockets.TcpClient('${ip}', 9100)`,
     `$s = $c.GetStream()`,
-    `$bytes = [byte[]]@(0x1B, 0x70, 0x00, 0x19, 0xFA)`,
+    `$bytes = [byte[]]@(0x1B, 0x70, 0x00, 0x32, 0x32)`,
     `$s.Write($bytes, 0, $bytes.Length)`,
     `$s.Close()`,
     `$c.Close()`,
@@ -388,10 +411,12 @@ function openCashDrawer(printerName) {
       console.log('[cash-drawer] OK →', name, `(${ip}:9100)`)
       return { success: true, method: 'escpos-tcp', printer: name, ip }
     }
+    console.error('[cash-drawer] Unexpected output:', result.trim())
     return { success: false, error: result.trim() || 'No output' }
   } catch (e) {
     try { fs.unlinkSync(psPath) } catch {}
-    console.error('[cash-drawer] Error:', e.message)
+    console.error('[cash-drawer] TCP send failed:', e.message)
+    console.error('[cash-drawer] → Check: 1) printer is online 2) port 9100 is open 3) firewall not blocking')
     return { success: false, error: e.message }
   }
 }
@@ -683,6 +708,7 @@ module.exports = {
   getPrinterIP,
   PRINTER_NAME,
   KITCHEN_PRINTER_NAME,
+  TAX_RATE,
   // Exported for testing
   charWidth,
   visualLength,

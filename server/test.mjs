@@ -42,19 +42,8 @@ describe('Health Check', () => {
 describe('Auth', () => {
   it('POST /api/auth/login 管理员登录', async () => {
     const { status, data } = await req('POST', '/api/auth/login', {
-      employeeNo: 'admin', password: 'admin123'
+      employeeNo: 'admin', password: '123456'
     })
-    // 如果默认密码不对，尝试其他常见密码
-    if (status !== 200) {
-      const r2 = await req('POST', '/api/auth/login', {
-        employeeNo: 'admin', password: '123456'
-      })
-      if (r2.status === 200) {
-        adminToken = r2.data.token
-        assert.ok(r2.data.user)
-        return
-      }
-    }
     assert.equal(status, 200)
     adminToken = data.token
     assert.ok(data.user)

@@ -117,15 +117,14 @@ Mozambique/
 │   │   ├── CategoryManageDialog.vue # 管理端：分类 CRUD + 排序
 │   │   └── OrderDetailDialog.vue   # 详情弹窗：菜品列表 + 退菜 + 加菜 + 补打
 │   └── views/
-│       ├── OrderPage.vue    # 平板点餐页（~2000行，已拆分出 2 个组件）
+│       ├── OrderPage.vue    # 平板点餐页（~662行，CSS 提取至 OrderPage.css）
 │       ├── Login.vue        # 登录页（~232行）
 │       ├── AdminLayout.vue  # 管理端布局 + 侧边栏（~495行）
 │       ├── PendingOrders.vue # 待结账订单管理 + 结账 + 加菜/退菜（~889行）
 │       ├── MenuManage.vue   # 菜品/分类管理（~570行，已拆分出 2 个组件）
 │       ├── OrderHistory.vue # 已完成订单历史 + 导出（~180行）
 │       ├── Reports.vue      # ECharts 报表仪表盘（~129行）
-│       ├── EmployeeManage.vue # 员工管理（~312行）
-│       └── Dashboard.vue    # 旧版点餐页（已废弃，保留未删）
+│       └── EmployeeManage.vue # 员工管理（~312行）
 ├── android/                 # Capacitor 生成的 Android 项目
 ├── dist/                    # Vite 构建输出
 ├── .github/workflows/
@@ -201,7 +200,7 @@ Mozambique/
 
 ## 打印机配置
 
-系统支持**双打印机**：厨房打印机（58mm）和结账小票打印机（80mm），可分别指定不同打印机。
+系统支持**双打印机**：厨房打印机（80mm）和结账小票打印机（80mm），可分别指定不同打印机。
 
 ### 环境变量
 
@@ -212,8 +211,8 @@ Mozambique/
 | `RECEIPT_WIDTH` | 小票每行最大字符数 (ASCII) | 32 |
 | `RECEIPT_WIDTH_MM` | 小票纸张宽度 (mm) | 80 |
 | `RECEIPT_HEIGHT_MM` | 小票纸张高度 (mm) | 80 |
-| `KITCHEN_WIDTH` | 厨打每行最大字符数 (ASCII) | 20 |
-| `KITCHEN_WIDTH_MM` | 厨打纸张宽度 (mm) | 58 |
+| `KITCHEN_WIDTH` | 厨打每行最大字符数 (ASCII) | 32 |
+| `KITCHEN_WIDTH_MM` | 厨打纸张宽度 (mm) | 80 |
 | `KITCHEN_HEIGHT_MM` | 厨打纸张高度 (mm) | 80 |
 | `LAN_IP` | 手动指定局域网 IP（跳过自动检测） | (自动检测) |
 | `PORT` | 服务端口 | 3000 |
@@ -221,11 +220,11 @@ Mozambique/
 ### 启动示例
 
 ```bash
-# 默认配置（小票 80mm，厨打 58mm，系统默认打印机）
+# 默认配置（小票 80mm，厨打 80mm，系统默认打印机）
 cd server && npm start
 
 # 指定打印机
-set PRINTER_NAME=WHJ717 && set KITCHEN_PRINTER_NAME=KP-58 && cd server && npm start
+set "PRINTER_NAME=XP-80C (chufang)" && set "KITCHEN_PRINTER_NAME=XP-80C (chufang)" && cd server && npm start
 
 # 手动指定局域网 IP
 set LAN_IP=192.168.1.100 && cd server && npm start

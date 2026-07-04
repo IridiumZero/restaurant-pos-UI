@@ -57,7 +57,7 @@
       <div class="checkout-body" v-if="currentOrder">
         <div class="checkout-summary">
           <div><span>#{{ currentOrder.id }} | {{ currentOrder.table_number }}{{ t('order.table') }} | {{ currentOrder.waiter_name }}</span></div>
-          <span class="checkout-total">{{ formatCurrency(currentOrder.total_amount) }}</span>
+          <span class="checkout-total">{{ formatCurrency(checkoutTotal) }}</span>
         </div>
         <el-divider />
         <el-radio-group v-model="paymentMethod" size="large">
@@ -67,13 +67,13 @@
         <template v-if="paymentMethod === 'cash'">
           <div class="cash-row"><span>{{ t('admin.cashReceived') }}:</span><el-input-number v-model="cashReceived" :min="0" :precision="2" :step="50" style="width:200px" /></div>
           <div class="quick-btns">
-            <el-button size="small" @click="cashReceived = Math.ceil(currentOrder.total_amount / 50) * 50">{{ t('admin.quickRoundUp') }}</el-button>
-            <el-button size="small" @click="cashReceived = currentOrder.total_amount + 50">+50</el-button>
-            <el-button size="small" @click="cashReceived = currentOrder.total_amount + 100">+100</el-button>
-            <el-button size="small" @click="cashReceived = currentOrder.total_amount + 200">+200</el-button>
+            <el-button size="small" @click="cashReceived = Math.ceil(checkoutTotal / 50) * 50">{{ t('admin.quickRoundUp') }}</el-button>
+            <el-button size="small" @click="cashReceived = checkoutTotal + 50">+50</el-button>
+            <el-button size="small" @click="cashReceived = checkoutTotal + 100">+100</el-button>
+            <el-button size="small" @click="cashReceived = checkoutTotal + 200">+200</el-button>
           </div>
-          <div v-if="cashReceived >= currentOrder.total_amount" class="change-info">
-            {{ t('admin.change') }}: <span class="change-amount">{{ formatCurrency(cashReceived - currentOrder.total_amount) }}</span>
+          <div v-if="cashReceived >= checkoutTotal" class="change-info">
+            {{ t('admin.change') }}: <span class="change-amount">{{ formatCurrency(cashReceived - checkoutTotal) }}</span>
           </div>
         </template>
       </div>
@@ -159,24 +159,6 @@ function getDishNameLocal(dish) {
 import { api } from '../api'
 import { useWebSocket } from '../ws'
 
-// 在控制台打印厨打单内容（方便调试）
-function logKitchenTicket(result, label) {
-  const ticket = result?.kitchen_print?.ticket_text
-  if (ticket) {
-    console.log(`\n%c🧾 ${label} — Kitchen Ticket`, 'color:#667eea;font-weight:bold;font-size:13px')
-    console.log(ticket.replace(/\r\n/g, '\n'))
-  }
-}
-
-// 在控制台打印结账小票内容（方便调试）
-function logReceipt(result, label) {
-  const ticket = result?.print?.ticket_text || result?.ticket_text
-  if (ticket) {
-    console.log(`\n%c🧾 ${label} — Receipt`, 'color:#E6A23C;font-weight:bold;font-size:13px')
-    console.log(ticket.replace(/\r\n/g, '\n'))
-  }
-}
-
 const { t, formatCurrency, locale } = useI18n()
 
 const isAdmin = computed(() => {
@@ -187,6 +169,12 @@ const loading = ref(false), paying = ref(false)
 const allOrders = ref([]), waiterList = ref([]), waiterFilter = ref(null), dishMap = ref({})
 const checkoutVisible = ref(false), currentOrder = ref(null)
 const paymentMethod = ref('cash'), cashReceived = ref(0)
+
+// Tax rate — must match server/printer.js TAX_RATE
+const TAX_RATE = 0.16
+const checkoutTotal = computed(() => {
+  return (currentOrder.value?.total_amount || 0) * (1 + TAX_RATE)
+})
 
 // ── Add Items state ────────────────
 const addItemsVisible = ref(false), addItemsOrder = ref(null)
@@ -206,7 +194,7 @@ const filteredOrders = computed(() => {
   return allOrders.value.filter(o => o.status === 'pending' || o.status === 'cancelled')
 })
 
-const canPay = computed(() => paymentMethod.value === 'pos' || cashReceived.value >= (currentOrder.value?.total_amount || 0))
+const canPay = computed(() => paymentMethod.value === 'pos' || cashReceived.value >= checkoutTotal.value)
 
 const filteredDishes = computed(() => {
   let list = allDishes.value.filter(d => d.status === 'active')
@@ -310,7 +298,7 @@ async function handleReopen(order) {
 async function handleCheckout() {
   paying.value = true
   try {
-    const change = paymentMethod.value === 'cash' ? cashReceived.value - currentOrder.value.total_amount : null
+    const change = paymentMethod.value === 'cash' ? cashReceived.value - checkoutTotal.value : null
     const result = await api.checkoutOrder(currentOrder.value.id, {
       paymentMethod: paymentMethod.value,
       cashReceived: paymentMethod.value === 'cash' ? cashReceived.value : null,
@@ -318,10 +306,19 @@ async function handleCheckout() {
       lang: locale.value,
     })
     if (result.print && result.print.success) {
-      logReceipt(result, 'Checkout')
-      ElMessage.success(t('admin.checkoutSuccess') + ' — ' + t('admin.receiptPrinted'))
+      // Check cash drawer status for cash payments
+      const drawer = result.print.cash_drawer
+      if (drawer) {
+        if (drawer.success) {
+          ElMessage.success(t('admin.checkoutSuccess') + ' — ' + t('admin.receiptPrinted') + ' — ' + t('admin.cashDrawerOpened'))
+        } else {
+          console.error('Cash drawer failed:', drawer.error)
+          ElMessage.warning(t('admin.checkoutSuccess') + ' — ' + t('admin.receiptPrinted') + ' — ' + t('admin.cashDrawerFailed'))
+        }
+      } else {
+        ElMessage.success(t('admin.checkoutSuccess') + ' — ' + t('admin.receiptPrinted'))
+      }
     } else {
-      logReceipt(result, 'Checkout (print failed)')
       const errMsg = result.print?.error || 'Unknown error'
       console.error('Print failed:', errMsg)
       ElMessage.warning(t('admin.checkoutSuccess') + ' — ' + t('admin.printFailed', { error: errMsg }))
@@ -371,7 +368,6 @@ async function handleAddItems() {
       qty: c.qty,
     }))
     const result = await api.addItemsToOrder(addItemsOrder.value.id, items, locale.value)
-    logKitchenTicket(result, 'Add Items')
     if (result.kitchen_print?.success) {
       ElMessage.success(t('kitchen.addItemsSuccess') + ' — ' + t('kitchen.kitchenPrintOk'))
     } else {
@@ -407,7 +403,6 @@ async function handleCancelItem(item) {
     const result = await api.cancelOrderItem(
       cancelItemOrder.value.id, item.id, qty, cancelReason.value, locale.value
     )
-    logKitchenTicket(result, 'Cancel Item')
     if (result.kitchen_print?.success) {
       ElMessage.success(t('kitchen.cancelItemSuccess') + ' — ' + t('kitchen.kitchenPrintOk'))
     } else {
@@ -426,7 +421,6 @@ async function handleReprint(order) {
   reprinting.value = order.id
   try {
     const result = await api.kitchenReprint(order.id, locale.value)
-    logKitchenTicket(result, 'Reprint')
     if (result.kitchen_print?.success) {
       ElMessage.success(t('kitchen.reprintSuccess'))
     } else {

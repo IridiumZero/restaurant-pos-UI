@@ -1,13 +1,23 @@
 const BASE_URL = () => {
-  const saved = localStorage.getItem('serverUrl')
-  if (saved) return saved
-  
-  // 在开发环境中，如果是localhost:5173/5174等，默认使用localhost:3000
   const origin = location.origin
-  if (origin.includes('localhost:') || origin.includes('127.0.0.1:')) {
+
+  // Capacitor/APK: origin is capacitor://localhost or https://localhost — useless for API
+  // Must rely on localStorage.serverUrl (set by user in Login page)
+  if (origin.startsWith('capacitor://') || origin.startsWith('https://localhost')) {
+    const saved = localStorage.getItem('serverUrl')
+    if (saved) return saved
     return 'http://localhost:3000'
   }
-  
+
+  // Browser: page was served by the Express server → location.origin IS the server
+  // Exception: Vite dev server on :5173/:5174 → use localhost:3000 for API
+  // Match any hostname with Vite port (localhost, 127.0.0.1, or LAN IP like 192.168.x.x)
+  if (/:517[0-9]/.test(origin)) {
+    return 'http://localhost:3000'
+  }
+
+  // Production/start-server.bat: use location.origin (this is the correct server URL)
+  // Stale localStorage.serverUrl is ignored — origin always reflects the actual address
   return origin || 'http://localhost:3000'
 }
 const REQUEST_TIMEOUT = 30000 // 30 seconds

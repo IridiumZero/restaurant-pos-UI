@@ -193,6 +193,8 @@ export default {
     checkoutSuccess: '结账成功',
     receiptPrinted: '小票已打印',
     printFailed: '打印失败: {error}',
+    cashDrawerOpened: '钱箱已弹开',
+    cashDrawerFailed: '钱箱未弹开, 请手动打开',
     receiptTitle: '小票',
     filterByWaiter: '按服务员筛选',
     filterByTable: '按桌号筛选',

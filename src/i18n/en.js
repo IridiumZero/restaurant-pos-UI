@@ -195,6 +195,8 @@ export default {
     checkoutSuccess: 'Payment successful',
     receiptPrinted: 'Receipt printed',
     printFailed: 'Print failed: {error}',
+    cashDrawerOpened: 'Cash drawer opened',
+    cashDrawerFailed: 'Cash drawer did not open, please open manually',
     receiptTitle: 'Receipt',
     filterByWaiter: 'Filter by waiter',
     filterByTable: 'Filter by table',

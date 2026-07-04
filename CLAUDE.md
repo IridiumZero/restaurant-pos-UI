@@ -23,7 +23,7 @@ Mozambique/
 ├── server/                  # 后端
 │   ├── index.js             # Express 服务 + 所有 API 路由 + WebSocket + 审计日志（~1310行）
 │   ├── db.js                # SQLite 数据库层（sql.js），含表结构、迁移、索引、CRUD、种子数据（~650行）
-│   ├── printer.js           # 双打印模块：厨打58mm + 小票80mm + PowerShell C# PrintDocument（~445行）
+│   ├── printer.js           # 双打印模块：厨打80mm + 小票80mm + PowerShell C# PrintDocument（~445行）
 │   ├── data.sqlite          # 运行时 SQLite 数据库文件
 │   ├── data.sqlite.bak      # 每次 save 前自动备份
 │   ├── backups/             # 带时间戳的备份（最多保留 7 个）
@@ -44,15 +44,14 @@ Mozambique/
 │   │   ├── CategoryManageDialog.vue # 管理端：分类 CRUD + 排序
 │   │   └── OrderDetailDialog.vue   # 详情弹窗：菜品列表 + 退菜 + 加菜 + 补打
 │   └── views/               # 页面组件
-│       ├── OrderPage.vue    # 平板点餐页（~2053行，最大组件）
+│       ├── OrderPage.vue    # 平板点餐页（~662行，CSS已提取至 OrderPage.css）
 │       ├── Login.vue        # 登录页（~232行）
 │       ├── AdminLayout.vue  # 管理端布局 + 侧边栏（~495行）
 │       ├── PendingOrders.vue # 待结账订单管理 + 结账 + 加菜/退菜（~889行）
-│       ├── MenuManage.vue   # 菜品/分类/口味 CRUD + 多图上传（~1264行）
+│       ├── MenuManage.vue   # 菜品/分类/口味 CRUD + 多图上传（~570行，已拆分出 2 个组件）
 │       ├── OrderHistory.vue # 已完成订单历史 + 导出（~180行）
 │       ├── Reports.vue      # ECharts 报表仪表盘（~129行）
-│       ├── EmployeeManage.vue # 员工管理（~312行）
-│       └── Dashboard.vue    # 旧版点餐页（已废弃，保留未删）
+│       └── EmployeeManage.vue # 员工管理（~312行）
 ├── android/                 # Capacitor 生成的 Android 项目
 ├── dist/                    # Vite 构建输出（Express 生产模式 serve 此目录）
 ├── .github/workflows/
@@ -90,10 +89,10 @@ npm run build                     # 构建前端到 dist/
 cd server && npm start            # Express serve dist + API（单端口 :3000）
 
 # 指定小票打印机（Windows）
-set PRINTER_NAME=WHJ717 && cd server && npm start
+set PRINTER_NAME=XP-80C (chufang) && cd server && npm start
 
-# 指定厨房打印机
-set KITCHEN_PRINTER_NAME=KP-58 && cd server && npm start
+# 指定厨房打印机（通常与小票共用同一台）
+set KITCHEN_PRINTER_NAME=XP-80C (chufang) && cd server && npm start
 
 # APK 构建
 npm run build && npx cap sync && cd android && ./gradlew assembleDebug
@@ -197,8 +196,7 @@ npm run build && npx cap sync && cd android && ./gradlew assembleDebug
 8. **订单快照**：order_items 存储 dish_name/dish_price 快照，防止菜品修改影响历史订单
 9. **服务器 URL 动态检测**：APK 端尝试从 localStorage 或 `location.origin` 获取，自动跳过 Capacitor WebView 的 `https://localhost` URL
 10. **数据库索引**：`_migrateIndexes()` 自动创建 9 个索引（orders_status/waiter_id/table_status/paid_at, order_items_order_id, dish_flavors_dish_id/flavor_id, audit_logs_created_at/action）
-11. **Dashboard.vue**：旧版点餐页面，已废弃但保留在代码库中
-12. **双打印机系统**：厨房打印机（58mm/20字符每行）+ 小票打印机（80mm/32字符每行），可分别指定不同打印机
+11. **双打印机系统**：厨房打印机（80mm/32字符每行）+ 小票打印机（80mm/32字符每行），可分别指定不同打印机
 13. **CJK 字体回退**：C# PrintDocument 使用 Consolas (Latin) + Microsoft YaHei (CJK) 逐字符渲染，JS 端 charWidth 与 C# IsCjk 范围保持一致
 14. **小票多语言**：小票模板含中/葡双语（始终），菜品名称从 dishes 表查翻译名；order_items 仅存中文快照
 15. **Vite ESM**：根 `package.json` 设 `"type": "module"` 消除 Vite CJS 弃用警告，`server/package.json` 设 `"type": "commonjs"` 保持服务端 `require()` 兼容
@@ -247,14 +245,14 @@ npm test
 
 ## 已知待优化项
 
-1. **Dashboard.vue 废弃未删除** — 占用代码库空间，建议清理
+1. ~~Dashboard.vue 废弃未删除~~ ✅ 已修复 — 文件已删除
 2. ~~无数据库索引~~ ✅ 已修复 — `_migrateIndexes()` 自动创建 9 个索引
-3. **OrderPage.vue 仍较大** — 已拆分出 DishDetailDialog 和 OrderDetailDialog，主文件仍有 ~2000 行，可进一步拆分购物车面板和菜品网格
+3. ~~OrderPage.vue 仍较大~~ ✅ 已修复 — 已拆分出 DishDetailDialog/OrderDetailDialog，CSS 提取至 OrderPage.css，主文件 ~662 行
 4. ~~MenuManage.vue 过大~~ ✅ 已修复 — 拆分出 DishEditDialog 和 CategoryManageDialog，主文件缩减至 ~570 行
-5. **无单元测试** — 缺少后端 API 测试和前端组件测试
+5. **无单元测试** — 缺少后端 API 测试和前端组件测试（仅有 25 个集成测试）
 6. ~~WebSocket 无断线重连~~ ✅ 已修复 — ws.js 实现单例 + 指数退避重连 (3s→30s)
 7. ~~图片无压缩~~ ✅ 已修复 — DishEditDialog 中上传前 Canvas 压缩（1024px + JPEG 85%）
 8. ~~无操作日志~~ ✅ 已修复 — audit_logs 表 + auditLog() 函数，覆盖删单/退菜/删菜品/删分类/删口味/恢复数据库/员工变更
-9. **JWT 密钥默认值硬编码** — 生产环境应通过 JWT_SECRET 环境变量覆盖
-10. **CORS 全开放** — 局域网场景可接受，但建议生产环境限制来源
+9. ~~JWT 密钥默认值硬编码~~ ✅ 已修复 — 未设置 JWT_SECRET 时自动生成随机密钥并打印警告
+10. **CORS 全开放** — 局域网场景可接受，已添加注释说明设计决策；如暴露公网需改为白名单
 11. **无 HTTPS** — 纯 HTTP 明文传输，JWT token 存在局域网嗅探风险（内网场景可接受）

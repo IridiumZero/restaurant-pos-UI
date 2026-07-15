@@ -147,17 +147,17 @@ async function handleLogin() {
   loading.value = true
   try {
     const res = await api.login(form.employeeNo, form.password)
-    if (res.user.role !== 'admin' && res.user.role !== 'cashier') {
-      ElMessage.error(t('login.accessDenied'))
-      loading.value = false
-      return
-    }
     serverStatus.value = 'ok'
     localStorage.setItem('token', res.token)
     localStorage.setItem('isLoggedIn', 'true')
     localStorage.setItem('user', JSON.stringify(res.user))
     ElMessage.success(t('login.success'))
-    router.push('/admin')
+    // 服务员 → 点餐页；管理员/收银员 → 管理后台
+    if (res.user.role === 'waiter') {
+      router.push('/order')
+    } else {
+      router.push('/admin')
+    }
   } catch (e) {
     // If connection error (not auth error), re-probe server
     if (e.name !== 'AbortError' && !e.message?.includes('login')) {

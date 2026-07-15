@@ -77,7 +77,7 @@ const serverUrl = ref(
 )
 
 function isCapacitorApp() {
-  return !!(window.Capacitor) || location.origin.startsWith('capacitor://')
+  return !!(window.Capacitor) || location.origin.startsWith('capacitor://') || location.origin.includes('localhost')
 }
 
 async function probeUrl(url) {

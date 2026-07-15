@@ -3,7 +3,7 @@ const BASE_URL = () => {
 
   // Capacitor/APK: origin is capacitor://localhost or https://localhost — useless for API
   // Must rely on localStorage.serverUrl (set by user in Login page)
-  if (origin.startsWith('capacitor://') || origin.startsWith('https://localhost')) {
+  if (origin.startsWith('capacitor://') || origin.includes('localhost')) {
     const saved = localStorage.getItem('serverUrl')
     if (saved) return saved
     return 'http://localhost:3000'
